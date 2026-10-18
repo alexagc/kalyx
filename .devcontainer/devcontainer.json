@@ -1,0 +1,24 @@
+{
+  "name": "Kalyx Development Container",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.23"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.Go",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  },
+  "forwardPorts": [8080, 3000],
+  "postCreateCommand": "echo 'Kalyx Dev Environment ready!'"
+}
