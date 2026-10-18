@@ -40,6 +40,12 @@ vulncheck:
 run:
 	$(GO) run ./cmd/kalyx
 
+docker-build:
+	docker build -t ghcr.io/alexagc/kalyx:latest .
+
+docker-run:
+	docker compose up -d
+
 clean:
 	rm -rf $(BINARY_DIR) coverage.out coverage.html
 

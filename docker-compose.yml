@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Quickstart standalone deployment with embedded SQLite
+  kalyx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/alexagc/kalyx:latest
+    container_name: kalyx-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - KALYX_SEED_DEMO=true
+      - KALYX_AUTH_DISABLED=true
+    volumes:
+      - kalyx-data:/data
+
+  # High-availability production setup with PostgreSQL (uncomment to test)
+  # kalyx-postgres-app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8081:8080"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     - PORT=8080
+  #     - DATABASE_URL=postgres://kalyx:kalyx_secret@postgres:5432/kalyx?sslmode=disable
+  #     - KALYX_SEED_DEMO=true
+
+  # postgres:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_USER=kalyx
+  #     - POSTGRES_PASSWORD=kalyx_secret
+  #     - POSTGRES_DB=kalyx
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U kalyx"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
+
+volumes:
+  kalyx-data:
+  # postgres-data:
