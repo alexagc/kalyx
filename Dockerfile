@@ -21,9 +21,11 @@ COPY . .
 # Prepare data directory owned by nonroot user (UID 65532)
 RUN mkdir -p /build/data && chown -R 65532:65532 /build/data
 
-# Build static binary without CGO
+# Build static binary without CGO (supports multi-arch linux/amd64 and linux/arm64)
+ARG TARGETOS
+ARG TARGETARCH
 ARG VERSION=0.1.0
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build \
     -trimpath \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o /build/bin/kalyx ./cmd/kalyx
