@@ -58,3 +58,16 @@ type ChangeProposal struct {
 	BreakingReason string      `json:"breaking_reason,omitempty"`
 	CreatedAt      time.Time   `json:"created_at"`
 }
+
+// PATToken represents a hashed Personal Access Token for CI/CD and service authentication.
+type PATToken struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	TokenHash  string     `json:"-"` // SHA-256 hash, never exposed in JSON
+	OwnerEmail string     `json:"owner_email"`
+	Team       string     `json:"team"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+

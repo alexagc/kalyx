@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -9,32 +10,60 @@ import (
 )
 
 var (
-	ErrEventNotFound   = errors.New("event not found")
-	ErrVersionNotFound = errors.New("event version not found")
+	ErrEventNotFound    = errors.New("event not found")
+	ErrVersionNotFound  = errors.New("event version not found")
+	ErrProposalNotFound = errors.New("change proposal not found")
+	ErrTokenNotFound    = errors.New("access token not found")
+	ErrConflict         = errors.New("resource already exists")
 )
 
-// Storage defines the persistence interface for Kalyx.
+// Storage defines the persistence contract for all database backends.
 type Storage interface {
-	ListEvents() ([]core.EventDefinition, error)
-	GetEvent(id string) (*core.EventDefinition, error)
-	CreateEvent(event core.EventDefinition) error
-	GetEventVersion(eventID, semver string) (*core.EventVersion, error)
-	CreateEventVersion(version core.EventVersion) error
-	ListVersions(eventID string) ([]core.EventVersion, error)
+	// Lifecycle & Health
+	Ping(ctx context.Context) error
+	Close() error
+
+	// Event Operations
+	ListEvents(ctx context.Context) ([]core.EventDefinition, error)
+	GetEvent(ctx context.Context, id string) (*core.EventDefinition, error)
+	CreateEvent(ctx context.Context, event core.EventDefinition) error
+
+	// Version Operations
+	ListVersions(ctx context.Context, eventID string) ([]core.EventVersion, error)
+	GetEventVersion(ctx context.Context, eventID, semver string) (*core.EventVersion, error)
+	CreateEventVersion(ctx context.Context, version core.EventVersion) error
+	UpdateEventVersionStatus(ctx context.Context, eventID, semver string, status core.EventStatus) error
+
+	// Governance Proposal Operations
+	ListProposals(ctx context.Context, status *core.EventStatus) ([]core.ChangeProposal, error)
+	GetProposal(ctx context.Context, id string) (*core.ChangeProposal, error)
+	CreateProposal(ctx context.Context, proposal core.ChangeProposal) error
+	UpdateProposalStatus(ctx context.Context, id string, status core.EventStatus, reviewer, notes string) error
+
+	// Security & Token Operations
+	SavePAT(ctx context.Context, token core.PATToken) error
+	GetPATByHash(ctx context.Context, tokenHash string) (*core.PATToken, error)
+	ListPATs(ctx context.Context, ownerEmail string) ([]core.PATToken, error)
+	RevokePAT(ctx context.Context, id string) error
+	TouchPAT(ctx context.Context, id string) error
 }
 
-// MemoryStorage is a zero-dependency in-memory store for quickstart and testing.
+// MemoryStorage is a thread-safe zero-dependency in-memory store for quickstart, unit testing, and fakes.
 type MemoryStorage struct {
-	mu       sync.RWMutex
-	events   map[string]core.EventDefinition
-	versions map[string][]core.EventVersion
+	mu        sync.RWMutex
+	events    map[string]core.EventDefinition
+	versions  map[string][]core.EventVersion
+	proposals map[string]core.ChangeProposal
+	tokens    map[string]core.PATToken
 }
 
 // NewMemoryStorage initializes an in-memory storage instance with initial sample data.
 func NewMemoryStorage() *MemoryStorage {
 	s := &MemoryStorage{
-		events:   make(map[string]core.EventDefinition),
-		versions: make(map[string][]core.EventVersion),
+		events:    make(map[string]core.EventDefinition),
+		versions:  make(map[string][]core.EventVersion),
+		proposals: make(map[string]core.ChangeProposal),
+		tokens:    make(map[string]core.PATToken),
 	}
 
 	// Seed sample CloudEvent contract
@@ -81,7 +110,18 @@ func NewMemoryStorage() *MemoryStorage {
 	return s
 }
 
-func (s *MemoryStorage) ListEvents() ([]core.EventDefinition, error) {
+// Ping checks storage responsiveness.
+func (s *MemoryStorage) Ping(ctx context.Context) error {
+	return nil
+}
+
+// Close releases any allocated resources.
+func (s *MemoryStorage) Close() error {
+	return nil
+}
+
+// ListEvents retrieves all registered event definitions.
+func (s *MemoryStorage) ListEvents(ctx context.Context) ([]core.EventDefinition, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -92,7 +132,8 @@ func (s *MemoryStorage) ListEvents() ([]core.EventDefinition, error) {
 	return list, nil
 }
 
-func (s *MemoryStorage) GetEvent(id string) (*core.EventDefinition, error) {
+// GetEvent fetches a single event definition by ID.
+func (s *MemoryStorage) GetEvent(ctx context.Context, id string) (*core.EventDefinition, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -103,15 +144,34 @@ func (s *MemoryStorage) GetEvent(id string) (*core.EventDefinition, error) {
 	return &ev, nil
 }
 
-func (s *MemoryStorage) CreateEvent(event core.EventDefinition) error {
+// CreateEvent persists a new event definition.
+func (s *MemoryStorage) CreateEvent(ctx context.Context, event core.EventDefinition) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if _, exists := s.events[event.ID]; exists {
+		return ErrConflict
+	}
 	s.events[event.ID] = event
 	return nil
 }
 
-func (s *MemoryStorage) GetEventVersion(eventID, semver string) (*core.EventVersion, error) {
+// ListVersions returns all immutable contract versions for an event.
+func (s *MemoryStorage) ListVersions(ctx context.Context, eventID string) ([]core.EventVersion, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	versions, exists := s.versions[eventID]
+	if !exists {
+		return []core.EventVersion{}, nil
+	}
+	res := make([]core.EventVersion, len(versions))
+	copy(res, versions)
+	return res, nil
+}
+
+// GetEventVersion retrieves a specific version of an event contract.
+func (s *MemoryStorage) GetEventVersion(ctx context.Context, eventID, semver string) (*core.EventVersion, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -121,27 +181,174 @@ func (s *MemoryStorage) GetEventVersion(eventID, semver string) (*core.EventVers
 	}
 	for _, v := range versions {
 		if v.SemVer == semver {
-			return &v, nil
+			res := v
+			return &res, nil
 		}
 	}
 	return nil, ErrVersionNotFound
 }
 
-func (s *MemoryStorage) CreateEventVersion(version core.EventVersion) error {
+// CreateEventVersion records a new contract version.
+func (s *MemoryStorage) CreateEventVersion(ctx context.Context, version core.EventVersion) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.versions[version.EventID] = append(s.versions[version.EventID], version)
+	existing := s.versions[version.EventID]
+	for _, v := range existing {
+		if v.SemVer == version.SemVer {
+			return ErrConflict
+		}
+	}
+
+	s.versions[version.EventID] = append(existing, version)
 	return nil
 }
 
-func (s *MemoryStorage) ListVersions(eventID string) ([]core.EventVersion, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// UpdateEventVersionStatus updates the lifecycle state of a contract version.
+func (s *MemoryStorage) UpdateEventVersionStatus(ctx context.Context, eventID, semver string, status core.EventStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	versions, exists := s.versions[eventID]
 	if !exists {
-		return []core.EventVersion{}, nil
+		return ErrVersionNotFound
 	}
-	return versions, nil
+
+	for i, v := range versions {
+		if v.SemVer == semver {
+			s.versions[eventID][i].Status = status
+			return nil
+		}
+	}
+	return ErrVersionNotFound
+}
+
+// ListProposals retrieves change proposals, optionally filtered by status.
+func (s *MemoryStorage) ListProposals(ctx context.Context, status *core.EventStatus) ([]core.ChangeProposal, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	list := make([]core.ChangeProposal, 0, len(s.proposals))
+	for _, p := range s.proposals {
+		if status == nil || p.Status == *status {
+			list = append(list, p)
+		}
+	}
+	return list, nil
+}
+
+// GetProposal retrieves a single change proposal by ID.
+func (s *MemoryStorage) GetProposal(ctx context.Context, id string) (*core.ChangeProposal, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prop, exists := s.proposals[id]
+	if !exists {
+		return nil, ErrProposalNotFound
+	}
+	return &prop, nil
+}
+
+// CreateProposal creates a new schema change proposal.
+func (s *MemoryStorage) CreateProposal(ctx context.Context, proposal core.ChangeProposal) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.proposals[proposal.ID]; exists {
+		return ErrConflict
+	}
+	s.proposals[proposal.ID] = proposal
+	return nil
+}
+
+// UpdateProposalStatus updates the review status and notes of a proposal.
+func (s *MemoryStorage) UpdateProposalStatus(ctx context.Context, id string, status core.EventStatus, reviewer, notes string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prop, exists := s.proposals[id]
+	if !exists {
+		return ErrProposalNotFound
+	}
+
+	prop.Status = status
+	if notes != "" {
+		prop.ReviewNotes = notes
+	}
+	s.proposals[id] = prop
+	return nil
+}
+
+// SavePAT securely stores a hashed Personal Access Token.
+func (s *MemoryStorage) SavePAT(ctx context.Context, token core.PATToken) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.tokens[token.ID]; exists {
+		return ErrConflict
+	}
+	for _, t := range s.tokens {
+		if t.TokenHash == token.TokenHash {
+			return ErrConflict
+		}
+	}
+
+	s.tokens[token.ID] = token
+	return nil
+}
+
+// GetPATByHash finds a Personal Access Token record by its SHA-256 hash.
+func (s *MemoryStorage) GetPATByHash(ctx context.Context, tokenHash string) (*core.PATToken, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, token := range s.tokens {
+		if token.TokenHash == tokenHash {
+			res := token
+			return &res, nil
+		}
+	}
+	return nil, ErrTokenNotFound
+}
+
+// ListPATs returns tokens belonging to an owner (or all if ownerEmail is empty).
+func (s *MemoryStorage) ListPATs(ctx context.Context, ownerEmail string) ([]core.PATToken, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	list := make([]core.PATToken, 0)
+	for _, token := range s.tokens {
+		if ownerEmail == "" || token.OwnerEmail == ownerEmail {
+			list = append(list, token)
+		}
+	}
+	return list, nil
+}
+
+// RevokePAT deletes a token by its ID.
+func (s *MemoryStorage) RevokePAT(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.tokens[id]; !exists {
+		return ErrTokenNotFound
+	}
+	delete(s.tokens, id)
+	return nil
+}
+
+// TouchPAT updates the last used timestamp of a token.
+func (s *MemoryStorage) TouchPAT(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	token, exists := s.tokens[id]
+	if !exists {
+		return ErrTokenNotFound
+	}
+
+	now := time.Now().UTC()
+	token.LastUsedAt = &now
+	s.tokens[id] = token
+	return nil
 }

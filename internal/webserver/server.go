@@ -55,7 +55,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		events, err := s.store.ListEvents()
+		events, err := s.store.ListEvents(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -72,7 +72,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "missing required fields: id, name, type", http.StatusBadRequest)
 			return
 		}
-		if err := s.store.CreateEvent(ev); err != nil {
+		if err := s.store.CreateEvent(r.Context(), ev); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -99,7 +99,7 @@ func (s *Server) handleEventSubroutes(w http.ResponseWriter, r *http.Request) {
 
 	// GET /api/v1/events/{id}
 	if len(parts) == 1 {
-		ev, err := s.store.GetEvent(eventID)
+		ev, err := s.store.GetEvent(r.Context(), eventID)
 		if err != nil {
 			http.Error(w, "event not found", http.StatusNotFound)
 			return
@@ -111,7 +111,7 @@ func (s *Server) handleEventSubroutes(w http.ResponseWriter, r *http.Request) {
 	// Subroutes: /api/v1/events/{id}/versions
 	if parts[1] == "versions" {
 		if len(parts) == 2 {
-			versions, err := s.store.ListVersions(eventID)
+			versions, err := s.store.ListVersions(r.Context(), eventID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -121,7 +121,7 @@ func (s *Server) handleEventSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 
 		semver := parts[2]
-		version, err := s.store.GetEventVersion(eventID, semver)
+		version, err := s.store.GetEventVersion(r.Context(), eventID, semver)
 		if err != nil {
 			http.Error(w, "version not found", http.StatusNotFound)
 			return

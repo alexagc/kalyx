@@ -1,8 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -16,14 +17,23 @@ func main() {
 		port = "8080"
 	}
 
-	store := storage.NewMemoryStorage()
+	ctx := context.Background()
+	store, err := storage.NewFromEnv(ctx)
+	if err != nil {
+		slog.Error("Failed to initialize storage", "error", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
 	server := webserver.NewServer(store)
 
 	addr := fmt.Sprintf(":%s", port)
-	log.Printf("🌸 Kalyx Server starting on http://localhost:%s (Zero-Dependency Mode)", port)
-	log.Printf("📖 CloudEvents Contract & Schema Registry ready")
+	slog.Info("🌸 Kalyx Server starting", "url", fmt.Sprintf("http://localhost:%s", port), "mode", "Zero-Dependency")
+	slog.Info("📖 CloudEvents Contract & Schema Registry ready")
 
 	if err := http.ListenAndServe(addr, server); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+		slog.Error("Server failed to start", "error", err)
+		os.Exit(1)
 	}
 }
+
