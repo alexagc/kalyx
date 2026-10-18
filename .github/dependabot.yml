@@ -39,6 +39,12 @@ updates:
       other-dependencies:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "golang.org/toolchain"
+      - dependency-name: "golang.org/x/crypto"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "modernc.org/sqlite"
+        update-types: ["version-update:semver-major"]
 
   # ===========================================================================
   # 2. Web Frontend: React, Vite, Tailwind CSS & Monaco Editor
@@ -60,6 +66,15 @@ updates:
       frontend-dependencies:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react*"
+        update-types: ["version-update:semver-major"]
 
   # ===========================================================================
   # 3. GitHub Actions CI/CD Workflows
