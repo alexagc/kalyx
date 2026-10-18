@@ -14,18 +14,16 @@ linters:
     - unused
     - unconvert
     - revive
-
-linters-settings:
-  govet:
-    enable-all: false
-  revive:
-    rules:
-      - name: exported
-        disabled: true
-      - name: package-comments
-        disabled: true
+  settings:
+    govet:
+      enable-all: false
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
 
 issues:
-  exclude-use-default: true
   max-issues-per-linter: 0
   max-same-issues: 0
