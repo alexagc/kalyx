@@ -44,3 +44,8 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# Private local notes & internal planning
+.notes/
+notes/
+*.private.md
