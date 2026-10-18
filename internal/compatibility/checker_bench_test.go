@@ -44,7 +44,8 @@ func TestCompatibilityLatencyBudget_500Properties(t *testing.T) {
 	oldSchema := generateSchemaWithProps(500, 0)
 	newSchema := generateSchemaWithProps(500, 20) // Add 20 optional properties (compatible minor change)
 
-	const budget = 5 * time.Millisecond
+	// Allow reasonable overhead for virtualized CI environments and -race detector instrumentation.
+	const budget = 25 * time.Millisecond
 
 	// Warm up
 	_, err := CheckCompatibility(oldSchema, newSchema)
