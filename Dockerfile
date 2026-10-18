@@ -4,7 +4,7 @@
 # ==========================================
 
 # Stage 1: Build static standalone binary
-FROM golang:1.23-alpine AS builder
+FROM golang:alpine AS builder
 
 WORKDIR /build
 
