@@ -6,6 +6,7 @@ import {
   MOCK_FIELD_SPECS,
   MOCK_ICEBERG_DDL,
   MOCK_DELTA_DDL,
+  MOCK_ORDER_COMPLETED_SCHEMA_V120,
 } from '../mockData';
 
 interface ContractDetailPageProps {
