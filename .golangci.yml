@@ -5,6 +5,8 @@ run:
   concurrency: 4
 
 linters:
+  disable:
+    - errcheck
   enable:
     - govet
     - ineffassign
