@@ -1,0 +1,29 @@
+run:
+  timeout: 5m
+  concurrency: 4
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - unconvert
+    - revive
+
+linters-settings:
+  govet:
+    enable-all: false
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+      - name: package-comments
+        disabled: true
+
+issues:
+  exclude-use-default: true
+  max-issues-per-linter: 0
+  max-same-issues: 0

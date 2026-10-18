@@ -37,7 +37,6 @@ func RunPostgresMigrations(ctx context.Context, db *sql.DB) error {
 	return runMigrations(ctx, db, PostgresMigrationsFS, "postgres", "postgres")
 }
 
-
 func runMigrations(ctx context.Context, db *sql.DB, fsys embed.FS, dir, dialect string) error {
 	// 1. Ensure schema_migrations table exists
 	ensureTableSQL := `

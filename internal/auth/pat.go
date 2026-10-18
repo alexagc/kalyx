@@ -21,8 +21,8 @@ const (
 )
 
 var (
-	ErrInvalidToken = errors.New("invalid personal access token")
-	ErrTokenExpired = errors.New("personal access token has expired")
+	ErrInvalidToken  = errors.New("invalid personal access token")
+	ErrTokenExpired  = errors.New("personal access token has expired")
 	ErrTokenNotFound = errors.New("personal access token not found")
 )
 

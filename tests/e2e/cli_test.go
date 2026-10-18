@@ -79,12 +79,12 @@ func setupTestServer(t *testing.T) (*httptest.Server, *storage.MemoryStorage) {
 	}
 
 	depVersion := core.EventVersion{
-		ID:         "ver_user_reg_1_0_0",
-		EventID:    depEvent.ID,
-		SemVer:     "1.0.0",
-		Status:     core.StatusDeprecated,
-		CreatedAt:  time.Now().UTC(),
-		CreatedBy:  "bob@company.com",
+		ID:        "ver_user_reg_1_0_0",
+		EventID:   depEvent.ID,
+		SemVer:    "1.0.0",
+		Status:    core.StatusDeprecated,
+		CreatedAt: time.Now().UTC(),
+		CreatedBy: "bob@company.com",
 		JSONSchema: `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "UserRegisteredPayload",
@@ -620,4 +620,3 @@ func TestCLIToken(t *testing.T) {
 		t.Errorf("expected warning message in output, got:\n%s", out)
 	}
 }
-

@@ -56,17 +56,17 @@ type Validator interface {
 
 // CompiledProperty represents a compiled property in JSON Schema Draft 2020-12.
 type CompiledProperty struct {
-	Type        string
-	Format      string
-	Minimum     *float64
-	Maximum     *float64
-	MinLength   *int
-	MaxLength   *int
-	Pattern     *regexp.Regexp
-	Enum        []any
-	Required    []string
-	Properties  map[string]*CompiledProperty
-	Items       *CompiledProperty
+	Type       string
+	Format     string
+	Minimum    *float64
+	Maximum    *float64
+	MinLength  *int
+	MaxLength  *int
+	Pattern    *regexp.Regexp
+	Enum       []any
+	Required   []string
+	Properties map[string]*CompiledProperty
+	Items      *CompiledProperty
 }
 
 // CompiledSchema represents a parsed and cached JSON Schema.
@@ -202,9 +202,9 @@ func (v *DefaultValidator) getOrCompileSchema(schemaJSON string) (*CompiledSchem
 	}
 
 	var rawDoc struct {
-		Title      string                    `json:"title"`
-		Properties map[string]rawProperty    `json:"properties"`
-		Required   []string                  `json:"required"`
+		Title      string                 `json:"title"`
+		Properties map[string]rawProperty `json:"properties"`
+		Required   []string               `json:"required"`
 	}
 
 	if err := json.Unmarshal([]byte(schemaJSON), &rawDoc); err != nil {

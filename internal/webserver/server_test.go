@@ -958,6 +958,3 @@ func TestServer_CreateEventVersion_RBAC(t *testing.T) {
 		t.Fatalf("expected 201 Created for team member, got %d: %s", recAllowed.Code, recAllowed.Body.String())
 	}
 }
-
-
-

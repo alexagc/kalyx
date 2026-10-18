@@ -1,0 +1,83 @@
+version: 2
+updates:
+  # ===========================================================================
+  # 1. Go Modules: Backend Server, Storage Adapters & CLI
+  # ===========================================================================
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      storage-and-drivers:
+        patterns:
+          - "modernc.org/sqlite"
+          - "github.com/jackc/pgx/*"
+
+      cloudevents-and-schema:
+        patterns:
+          - "github.com/cloudevents/*"
+          - "github.com/santhosh-tekuri/jsonschema/*"
+          - "github.com/xeipuuv/gojsonschema"
+
+      observability-and-metrics:
+        patterns:
+          - "github.com/prometheus/*"
+
+      test-frameworks:
+        patterns:
+          - "github.com/stretchr/testify*"
+
+      other-dependencies:
+        patterns:
+          - "*"
+
+  # ===========================================================================
+  # 2. Web Frontend: React, Vite, Tailwind CSS & Monaco Editor
+  # ===========================================================================
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+
+  # ===========================================================================
+  # 3. GitHub Actions CI/CD Workflows
+  # ===========================================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

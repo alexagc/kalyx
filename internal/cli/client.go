@@ -394,4 +394,3 @@ func (c *Client) CreateVersion(ctx context.Context, eventID string, version core
 
 	return nil
 }
-

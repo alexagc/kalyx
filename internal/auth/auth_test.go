@@ -579,4 +579,3 @@ func TestOIDCEngine_EdgeCases(t *testing.T) {
 		t.Errorf("expected analytics-member to grant analytics team")
 	}
 }
-

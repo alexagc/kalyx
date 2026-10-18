@@ -105,9 +105,9 @@ func TestGenerateDeltaDDL(t *testing.T) {
 
 func TestGetGenerator(t *testing.T) {
 	tests := []struct {
-		format       string
-		expectedFmt  string
-		expectError  bool
+		format      string
+		expectedFmt string
+		expectError bool
 	}{
 		{"iceberg", FormatIceberg, false},
 		{"ICEBERG", FormatIceberg, false},

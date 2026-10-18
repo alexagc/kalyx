@@ -108,4 +108,3 @@ func (u *UserContext) IsInTeam(team string) bool {
 	}
 	return false
 }
-

@@ -571,4 +571,3 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  version     Show kalyxctl version")
 	fmt.Fprintln(w, "\nRun 'kalyxctl <command> -h' for more details on each command.")
 }
-
