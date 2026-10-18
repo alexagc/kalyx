@@ -1,17 +1,21 @@
 package webserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/alexagc/kalyx/internal/auth"
 	"github.com/alexagc/kalyx/internal/compatibility"
 	"github.com/alexagc/kalyx/internal/core"
 	"github.com/alexagc/kalyx/internal/datalake"
 	"github.com/alexagc/kalyx/internal/httputil"
+	"github.com/alexagc/kalyx/internal/observability"
 	"github.com/alexagc/kalyx/internal/storage"
 	"github.com/alexagc/kalyx/internal/validator"
 )
@@ -20,31 +24,85 @@ import (
 type Server struct {
 	store     storage.Storage
 	validator validator.Validator
+	auth      *auth.Middleware
+	metrics   *observability.Registry
 	mux       *http.ServeMux
 }
 
+// ServerOption configures optional behaviors and dependencies for Server.
+type ServerOption func(*Server)
+
+// WithAuthMiddleware injects a custom auth middleware instance into the Server.
+func WithAuthMiddleware(m *auth.Middleware) ServerOption {
+	return func(s *Server) {
+		s.auth = m
+	}
+}
+
+// WithAuthDisabled programmatically configures whether auth is bypassed.
+func WithAuthDisabled(disabled bool) ServerOption {
+	return func(s *Server) {
+		if s.auth != nil {
+			s.auth.SetBypass(disabled)
+		}
+	}
+}
+
+// WithOIDCEngine injects an OIDC identity engine for JWT validation.
+func WithOIDCEngine(oidc *auth.OIDCEngine) ServerOption {
+	return func(s *Server) {
+		s.auth = auth.NewMiddleware(s.store, oidc)
+	}
+}
+
+// WithMetricsRegistry injects a custom Prometheus metrics registry into the Server.
+func WithMetricsRegistry(reg *observability.Registry) ServerOption {
+	return func(s *Server) {
+		s.metrics = reg
+	}
+}
+
 // NewServer initializes the HTTP server routes and dependencies.
-func NewServer(store storage.Storage) *Server {
+func NewServer(store storage.Storage, opts ...ServerOption) *Server {
 	s := &Server{
 		store:     store,
 		validator: validator.New(),
 		mux:       http.NewServeMux(),
+		metrics:   observability.DefaultRegistry,
+		auth:      auth.NewMiddleware(store, nil),
 	}
+
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	// Sync initial contract count metrics from persistent storage
+	_ = s.metrics.SyncContractsFromStorage(context.Background(), store)
+
 	s.routes()
 	return s
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.metrics.HTTPMiddleware(s.mux).ServeHTTP(w, r)
 }
 
 func (s *Server) routes() {
+	// Health & Observability probes (unprotected)
 	s.mux.HandleFunc("/healthz", s.handleHealth)
-	s.mux.HandleFunc("/api/v1/events", s.handleEvents)
-	s.mux.HandleFunc("/api/v1/compatibility/check", s.handleCompatibilityCheck)
-	s.mux.HandleFunc("/api/v1/validate", s.handleValidate)
-	s.mux.HandleFunc("/api/v1/events/", s.handleEventSubroutes)
+	s.mux.HandleFunc("/livez", observability.LivenessHandler())
+	s.mux.HandleFunc("/readyz", observability.ReadinessHandler(s.store))
+	s.mux.HandleFunc("/metrics", s.metrics.Handler())
+
+	// Embedded Web Dashboard
 	s.mux.HandleFunc("/", s.handleWebDashboard)
+
+	// Protected API routes wrapped with AuthMiddleware
+	apiWrap := s.auth.Wrap
+	s.mux.Handle("/api/v1/events", apiWrap(http.HandlerFunc(s.handleEvents)))
+	s.mux.Handle("/api/v1/compatibility/check", apiWrap(http.HandlerFunc(s.handleCompatibilityCheck)))
+	s.mux.Handle("/api/v1/validate", apiWrap(http.HandlerFunc(s.handleValidate)))
+	s.mux.Handle("/api/v1/events/", apiWrap(http.HandlerFunc(s.handleEventSubroutes)))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +147,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Enforce RBAC CanPropose check
+		if user, ok := auth.UserFromContext(r.Context()); ok {
+			if !auth.CanPropose(user, &ev) {
+				httputil.WriteProblemSimple(w, http.StatusForbidden, "Forbidden", "user is not authorized to create events for this team")
+				return
+			}
+		}
+
 		if err := s.store.CreateEvent(r.Context(), ev); err != nil {
 			if errors.Is(err, storage.ErrConflict) {
 				httputil.WriteProblemSimple(w, http.StatusConflict, "Event Already Exists", err.Error())
@@ -97,6 +163,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			httputil.WriteProblemSimple(w, http.StatusInternalServerError, "Failed to Create Event", err.Error())
 			return
 		}
+
+		s.metrics.SetContractsTotal(ev.Domain, "registered", 1)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -225,6 +293,11 @@ func (s *Server) applyDeprecationHeaders(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	defer func() {
+		s.metrics.ObserveValidationDuration(time.Since(start).Seconds())
+	}()
+
 	if r.Method != http.MethodPost {
 		httputil.WriteProblemSimple(w, http.StatusMethodNotAllowed, "Method Not Allowed", fmt.Sprintf("method %s is not allowed, use POST", r.Method))
 		return

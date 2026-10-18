@@ -57,6 +57,7 @@ func TestMain(m *testing.M) {
 
 func setupTestServer(t *testing.T) (*httptest.Server, *storage.MemoryStorage) {
 	t.Helper()
+	t.Setenv("KALYX_AUTH_DISABLED", "true")
 	store := storage.NewMemoryStorage()
 	ctx := context.Background()
 

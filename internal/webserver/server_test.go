@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexagc/kalyx/internal/auth"
 	"github.com/alexagc/kalyx/internal/core"
 	"github.com/alexagc/kalyx/internal/httputil"
 	"github.com/alexagc/kalyx/internal/storage"
@@ -18,6 +19,7 @@ import (
 
 func setupTestServer(t *testing.T) (*Server, storage.Storage) {
 	t.Helper()
+	t.Setenv("KALYX_AUTH_DISABLED", "true")
 	store := storage.NewMemoryStorage()
 	server := NewServer(store)
 	return server, store
@@ -342,3 +344,207 @@ func TestServer_RFC7807_ErrorResponses(t *testing.T) {
 		t.Errorf("expected urn:kalyx:error:method-not-allowed, got %s", prob405.Type)
 	}
 }
+
+func TestServer_Observability_Probes(t *testing.T) {
+	server, _ := setupTestServer(t)
+
+	// 1. /livez probe
+	reqLive := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	recLive := httptest.NewRecorder()
+	server.ServeHTTP(recLive, reqLive)
+
+	if recLive.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on /livez, got %d: %s", recLive.Code, recLive.Body.String())
+	}
+	var liveRes map[string]any
+	_ = json.Unmarshal(recLive.Body.Bytes(), &liveRes)
+	if liveRes["status"] != "alive" {
+		t.Errorf("expected status=alive, got %v", liveRes["status"])
+	}
+
+	// 2. /readyz probe
+	reqReady := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	recReady := httptest.NewRecorder()
+	server.ServeHTTP(recReady, reqReady)
+
+	if recReady.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on /readyz, got %d: %s", recReady.Code, recReady.Body.String())
+	}
+	var readyRes map[string]any
+	_ = json.Unmarshal(recReady.Body.Bytes(), &readyRes)
+	if readyRes["status"] != "ready" {
+		t.Errorf("expected status=ready, got %v", readyRes["status"])
+	}
+}
+
+func TestServer_Observability_Metrics(t *testing.T) {
+	server, _ := setupTestServer(t)
+
+	// Trigger a validate request to record validation_duration_seconds
+	validEvent := `{
+		"specversion": "1.0",
+		"id": "evt-metrics",
+		"source": "/checkout",
+		"type": "com.company.orders.completed.v1",
+		"data": {
+			"order_id": "ord-1",
+			"customer_email": "test@example.com",
+			"amount": 50.0,
+			"country": "US"
+		}
+	}`
+	reqVal := httptest.NewRequest(http.MethodPost, "/api/v1/validate", strings.NewReader(validEvent))
+	recVal := httptest.NewRecorder()
+	server.ServeHTTP(recVal, reqVal)
+
+	// Scrape /metrics
+	reqMetrics := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	recMetrics := httptest.NewRecorder()
+	server.ServeHTTP(recMetrics, reqMetrics)
+
+	if recMetrics.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK on /metrics, got %d", recMetrics.Code)
+	}
+
+	body := recMetrics.Body.String()
+	if !strings.Contains(body, "# TYPE http_requests_total counter") {
+		t.Errorf("missing http_requests_total in /metrics:\n%s", body)
+	}
+	if !strings.Contains(body, "# TYPE validation_duration_seconds histogram") {
+		t.Errorf("missing validation_duration_seconds in /metrics:\n%s", body)
+	}
+	if !strings.Contains(body, "# TYPE contracts_total gauge") {
+		t.Errorf("missing contracts_total in /metrics:\n%s", body)
+	}
+}
+
+func TestServer_Auth_Protection_And_PAT(t *testing.T) {
+	t.Setenv("KALYX_AUTH_DISABLED", "false")
+	store := storage.NewMemoryStorage()
+	server := NewServer(store, WithAuthDisabled(false))
+	ctx := context.Background()
+
+	// 1. Missing Authorization header -> 401 Unauthorized RFC 7807
+	reqNoAuth := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	recNoAuth := httptest.NewRecorder()
+	server.ServeHTTP(recNoAuth, reqNoAuth)
+
+	if recNoAuth.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", recNoAuth.Code)
+	}
+	if recNoAuth.Header().Get("Content-Type") != "application/problem+json" {
+		t.Errorf("expected application/problem+json, got %s", recNoAuth.Header().Get("Content-Type"))
+	}
+	var prob httputil.ProblemDetails
+	_ = json.Unmarshal(recNoAuth.Body.Bytes(), &prob)
+	if prob.Type != "urn:kalyx:error:unauthorized" {
+		t.Errorf("expected urn:kalyx:error:unauthorized, got %s", prob.Type)
+	}
+
+	// 2. Generate valid PAT
+	patEngine := auth.NewPATEngine(store)
+	rawToken, _, err := patEngine.GeneratePAT(ctx, "Test PAT", "ci@company.com", "checkout", nil)
+	if err != nil {
+		t.Fatalf("failed to generate PAT: %v", err)
+	}
+
+	// 3. Request with valid PAT -> 200 OK
+	reqPAT := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	reqPAT.Header.Set("Authorization", "Bearer "+rawToken)
+	recPAT := httptest.NewRecorder()
+	server.ServeHTTP(recPAT, reqPAT)
+
+	if recPAT.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with valid PAT, got %d: %s", recPAT.Code, recPAT.Body.String())
+	}
+}
+
+func TestServer_Auth_Protection_And_JWT(t *testing.T) {
+	t.Setenv("KALYX_AUTH_DISABLED", "false")
+	store := storage.NewMemoryStorage()
+	secret := []byte("secret-jwt-key-for-webserver-test!")
+	oidc := auth.NewOIDCEngine(auth.OIDCConfig{
+		Secret: secret,
+	})
+	server := NewServer(store, WithOIDCEngine(oidc), WithAuthDisabled(false))
+
+	// 1. Create valid JWT
+	claims := &auth.JWTClaims{
+		Subject:   "usr_lead_1",
+		Email:     "lead@company.com",
+		Groups:    []any{"checkout-lead"},
+		ExpiresAt: time.Now().Add(time.Hour).Unix(),
+	}
+	tokenStr, err := auth.SignTestHS256Token(claims, secret)
+	if err != nil {
+		t.Fatalf("failed to sign token: %v", err)
+	}
+
+	// 2. Request with valid JWT -> 200 OK
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with valid JWT, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestServer_RBAC_CanPropose(t *testing.T) {
+	t.Setenv("KALYX_AUTH_DISABLED", "false")
+	store := storage.NewMemoryStorage()
+	secret := []byte("secret-rbac-key-for-test-32bytes!")
+	oidc := auth.NewOIDCEngine(auth.OIDCConfig{
+		Secret: secret,
+	})
+	server := NewServer(store, WithOIDCEngine(oidc), WithAuthDisabled(false))
+
+	// 1. User from "orders" team trying to create event for "checkout" team -> 403 Forbidden
+	ordersClaims := &auth.JWTClaims{
+		Subject:   "usr_orders",
+		Email:     "orders_member@company.com",
+		Groups:    []any{"orders-member"},
+		ExpiresAt: time.Now().Add(time.Hour).Unix(),
+	}
+	ordersToken, _ := auth.SignTestHS256Token(ordersClaims, secret)
+
+	eventPayload := `{
+		"id": "ev_checkout_new",
+		"domain": "Checkout",
+		"name": "CheckoutInitiated",
+		"type": "com.company.checkout.initiated.v1",
+		"owner_team": "checkout"
+	}`
+
+	reqForbidden := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(eventPayload))
+	reqForbidden.Header.Set("Authorization", "Bearer "+ordersToken)
+	recForbidden := httptest.NewRecorder()
+	server.ServeHTTP(recForbidden, reqForbidden)
+
+	if recForbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for cross-team propose, got %d: %s", recForbidden.Code, recForbidden.Body.String())
+	}
+	if recForbidden.Header().Get("Content-Type") != "application/problem+json" {
+		t.Errorf("expected application/problem+json, got %s", recForbidden.Header().Get("Content-Type"))
+	}
+
+	// 2. User from "checkout" team creating event for "checkout" team -> 201 Created
+	checkoutClaims := &auth.JWTClaims{
+		Subject:   "usr_checkout",
+		Email:     "checkout_member@company.com",
+		Groups:    []any{"checkout-member"},
+		ExpiresAt: time.Now().Add(time.Hour).Unix(),
+	}
+	checkoutToken, _ := auth.SignTestHS256Token(checkoutClaims, secret)
+
+	reqAllowed := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(eventPayload))
+	reqAllowed.Header.Set("Authorization", "Bearer "+checkoutToken)
+	recAllowed := httptest.NewRecorder()
+	server.ServeHTTP(recAllowed, reqAllowed)
+
+	if recAllowed.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for team member, got %d: %s", recAllowed.Code, recAllowed.Body.String())
+	}
+}
+
