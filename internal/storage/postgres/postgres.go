@@ -15,6 +15,12 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+func init() {
+	storage.RegisterDriver("postgres", func(ctx context.Context, dsn string) (storage.Storage, error) {
+		return New(ctx, dsn)
+	})
+}
+
 // Storage implements storage.Storage using pure-Go PostgreSQL via pgx.
 type Storage struct {
 	db *sql.DB

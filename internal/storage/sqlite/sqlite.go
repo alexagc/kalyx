@@ -15,6 +15,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func init() {
+	storage.RegisterDriver("sqlite", func(ctx context.Context, dsn string) (storage.Storage, error) {
+		return New(ctx, dsn)
+	})
+}
+
 // Storage implements storage.Storage using pure-Go CGO-free SQLite.
 type Storage struct {
 	db *sql.DB

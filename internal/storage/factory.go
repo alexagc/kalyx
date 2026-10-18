@@ -5,10 +5,23 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/alexagc/kalyx/internal/storage/postgres"
-	"github.com/alexagc/kalyx/internal/storage/sqlite"
+	"sync"
 )
+
+// DriverFunc is a constructor function for a storage driver.
+type DriverFunc func(ctx context.Context, dsn string) (Storage, error)
+
+var (
+	driversMu sync.RWMutex
+	drivers   = make(map[string]DriverFunc)
+)
+
+// RegisterDriver registers a storage driver constructor.
+func RegisterDriver(name string, fn DriverFunc) {
+	driversMu.Lock()
+	defer driversMu.Unlock()
+	drivers[name] = fn
+}
 
 // NewFromEnv initializes a Storage implementation based on environment variables:
 // - If DATABASE_URL is "memory", it returns a thread-safe MemoryStorage instance.
@@ -20,8 +33,15 @@ func NewFromEnv(ctx context.Context) (Storage, error) {
 		return NewMemoryStorage(), nil
 	}
 
+	driversMu.RLock()
+	defer driversMu.RUnlock()
+
 	if strings.HasPrefix(dbURL, "postgres://") || strings.HasPrefix(dbURL, "postgresql://") {
-		return postgres.New(ctx, dbURL)
+		fn, ok := drivers["postgres"]
+		if !ok {
+			return nil, fmt.Errorf("postgres driver not registered")
+		}
+		return fn(ctx, dbURL)
 	}
 
 	sqlitePath := os.Getenv("KALYX_SQLITE_PATH")
@@ -33,5 +53,9 @@ func NewFromEnv(ctx context.Context) (Storage, error) {
 		}
 	}
 
-	return sqlite.New(ctx, sqlitePath)
+	fn, ok := drivers["sqlite"]
+	if !ok {
+		return nil, fmt.Errorf("sqlite driver not registered")
+	}
+	return fn(ctx, sqlitePath)
 }

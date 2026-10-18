@@ -8,6 +8,8 @@ import (
 	"os"
 
 	"github.com/alexagc/kalyx/internal/storage"
+	_ "github.com/alexagc/kalyx/internal/storage/postgres"
+	_ "github.com/alexagc/kalyx/internal/storage/sqlite"
 	"github.com/alexagc/kalyx/internal/webserver"
 )
 

@@ -3,20 +3,62 @@ package datalake
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
-// SchemaProperty defines type and constraints in JSON Schema.
+// Supported data lake DDL formats.
+const (
+	FormatIceberg = "iceberg"
+	FormatDelta   = "delta"
+)
+
+// SchemaProperty defines type and constraints in JSON Schema Draft 2020-12.
 type SchemaProperty struct {
-	Type        string `json:"type"`
-	Format      string `json:"format,omitempty"`
-	Description string `json:"description,omitempty"`
+	Type        string                    `json:"type"`
+	Format      string                    `json:"format,omitempty"`
+	Description string                    `json:"description,omitempty"`
+	Properties  map[string]SchemaProperty `json:"properties,omitempty"`
+	Items       *SchemaProperty           `json:"items,omitempty"`
 }
 
+// SchemaDocument represents a JSON Schema document containing properties and required fields.
 type SchemaDocument struct {
-	Title      string                    `json:"title"`
-	Properties map[string]SchemaProperty `json:"properties"`
-	Required   []string                  `json:"required"`
+	Title       string                    `json:"title"`
+	Description string                    `json:"description,omitempty"`
+	Properties  map[string]SchemaProperty `json:"properties"`
+	Required    []string                  `json:"required"`
+}
+
+// Generator defines the unified interface for Data Lake DDL generators.
+type Generator interface {
+	Format() string
+	GenerateDDL(tableName string, schemaJSON string, partitionKeys []string) (string, error)
+}
+
+// IcebergGenerator produces Apache Iceberg CREATE TABLE DDL statements.
+type IcebergGenerator struct{}
+
+// Format returns the format identifier for Apache Iceberg.
+func (g *IcebergGenerator) Format() string {
+	return FormatIceberg
+}
+
+// GenerateDDL generates an Apache Iceberg DDL statement from JSON Schema Draft 2020-12.
+func (g *IcebergGenerator) GenerateDDL(tableName string, schemaJSON string, partitionKeys []string) (string, error) {
+	return GenerateIcebergDDL(tableName, schemaJSON, partitionKeys)
+}
+
+// GetGenerator retrieves the appropriate Generator for the specified format.
+func GetGenerator(format string) (Generator, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case FormatIceberg, "":
+		return &IcebergGenerator{}, nil
+	case FormatDelta, "deltalake":
+		return &DeltaGenerator{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported datalake format: %s (supported: iceberg, delta)", format)
+	}
 }
 
 // GenerateIcebergDDL produces an Apache Iceberg CREATE TABLE statement from a JSON Schema.
@@ -40,16 +82,24 @@ func GenerateIcebergDDL(tableName string, schemaJSON string, partitionKeys []str
 	columns = append(columns, "  datacontenttype STRING COMMENT 'CloudEvent Content Type'")
 	columns = append(columns, "  dataschema STRING COMMENT 'CloudEvent Schema URL'")
 
+	// Sort properties for deterministic DDL output
+	propNames := make([]string, 0, len(doc.Properties))
+	for name := range doc.Properties {
+		propNames = append(propNames, name)
+	}
+	sort.Strings(propNames)
+
 	// Payload data columns translated from JSON Schema
-	for propName, prop := range doc.Properties {
-		sqlType := mapJSONTypeToIceberg(prop.Type, prop.Format)
+	for _, propName := range propNames {
+		prop := doc.Properties[propName]
+		sqlType := mapJSONTypeToIceberg(prop)
 		nullable := ""
 		if requiredMap[propName] {
 			nullable = " NOT NULL"
 		}
 		comment := ""
 		if prop.Description != "" {
-			comment = fmt.Sprintf(" COMMENT '%s'", prop.Description)
+			comment = fmt.Sprintf(" COMMENT '%s'", strings.ReplaceAll(prop.Description, "'", "\\'"))
 		}
 		columns = append(columns, fmt.Sprintf("  data_%s %s%s%s", propName, sqlType, nullable, comment))
 	}
@@ -69,13 +119,13 @@ func GenerateIcebergDDL(tableName string, schemaJSON string, partitionKeys []str
 	return ddl, nil
 }
 
-func mapJSONTypeToIceberg(jsonType, format string) string {
-	switch jsonType {
+func mapJSONTypeToIceberg(prop SchemaProperty) string {
+	switch prop.Type {
 	case "string":
-		if format == "date-time" {
+		if prop.Format == "date-time" {
 			return "TIMESTAMP"
 		}
-		if format == "date" {
+		if prop.Format == "date" {
 			return "DATE"
 		}
 		return "STRING"
@@ -86,9 +136,26 @@ func mapJSONTypeToIceberg(jsonType, format string) string {
 	case "boolean":
 		return "BOOLEAN"
 	case "array":
+		if prop.Items != nil {
+			return fmt.Sprintf("ARRAY<%s>", mapJSONTypeToIceberg(*prop.Items))
+		}
 		return "ARRAY<STRING>"
 	case "object":
-		return "STRING" // Or STRUCT in advanced cases
+		if len(prop.Properties) > 0 {
+			nestedNames := make([]string, 0, len(prop.Properties))
+			for name := range prop.Properties {
+				nestedNames = append(nestedNames, name)
+			}
+			sort.Strings(nestedNames)
+
+			var subCols []string
+			for _, name := range nestedNames {
+				subProp := prop.Properties[name]
+				subCols = append(subCols, fmt.Sprintf("%s: %s", name, mapJSONTypeToIceberg(subProp)))
+			}
+			return fmt.Sprintf("STRUCT<%s>", strings.Join(subCols, ", "))
+		}
+		return "STRING"
 	default:
 		return "STRING"
 	}

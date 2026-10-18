@@ -23,8 +23,8 @@ type CompatibilityResult struct {
 
 // SimpleSchema represents the essential fields of a JSON Schema object for comparison.
 type SimpleSchema struct {
-	Properties map[string]interface{} `json:"properties"`
-	Required   []string               `json:"required"`
+	Properties map[string]json.RawMessage `json:"properties"`
+	Required   []string                   `json:"required"`
 }
 
 // CheckCompatibility compares old and new JSON Schema strings and determines SemVer impact.
