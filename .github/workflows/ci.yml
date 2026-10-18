@@ -37,10 +37,13 @@ jobs:
             exit 1
           fi
 
+      - name: Precompile Go packages
+        run: go build ./...
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.60.3
+          version: v1.64.5
           args: --timeout=5m
 
       - name: Run govulncheck (Vulnerability Scanner)
