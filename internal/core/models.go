@@ -1,6 +1,9 @@
 package core
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // EventStatus defines the lifecycle status of an event version.
 type EventStatus string
@@ -69,5 +72,40 @@ type PATToken struct {
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// UserContext carries the authenticated identity, assigned teams, and resolved roles.
+type UserContext struct {
+	Subject   string   `json:"sub"`
+	Email     string   `json:"email"`
+	Teams     []string `json:"teams"`
+	Roles     []string `json:"roles"`
+	IsMachine bool     `json:"is_machine"`
+}
+
+// HasRole returns true if the user possesses the specified role.
+func (u *UserContext) HasRole(role string) bool {
+	if u == nil {
+		return false
+	}
+	for _, r := range u.Roles {
+		if strings.EqualFold(r, role) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsInTeam returns true if the user is a member of the specified team.
+func (u *UserContext) IsInTeam(team string) bool {
+	if u == nil || team == "" {
+		return false
+	}
+	for _, t := range u.Teams {
+		if strings.EqualFold(t, team) {
+			return true
+		}
+	}
+	return false
 }
 

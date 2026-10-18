@@ -389,6 +389,40 @@ func (s *Storage) ListPATs(ctx context.Context, ownerEmail string) ([]core.PATTo
 	return tokens, rows.Err()
 }
 
+func (s *Storage) ListPATTokens(ctx context.Context, ownerEmail string) ([]*core.PATToken, error) {
+	var query string
+	var args []interface{}
+	if ownerEmail != "" {
+		query = `SELECT id, name, token_hash, owner_email, team, expires_at, created_at, last_used_at FROM pat_tokens WHERE owner_email = $1 ORDER BY created_at DESC`
+		args = append(args, ownerEmail)
+	} else {
+		query = `SELECT id, name, token_hash, owner_email, team, expires_at, created_at, last_used_at FROM pat_tokens ORDER BY created_at DESC`
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list PAT tokens: %w", err)
+	}
+	defer rows.Close()
+
+	tokens := make([]*core.PATToken, 0)
+	for rows.Next() {
+		var token core.PATToken
+		var expiresAt, lastUsedAt sql.NullTime
+		if err := rows.Scan(&token.ID, &token.Name, &token.TokenHash, &token.OwnerEmail, &token.Team, &expiresAt, &token.CreatedAt, &lastUsedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan token: %w", err)
+		}
+		if expiresAt.Valid {
+			token.ExpiresAt = &expiresAt.Time
+		}
+		if lastUsedAt.Valid {
+			token.LastUsedAt = &lastUsedAt.Time
+		}
+		tokens = append(tokens, &token)
+	}
+	return tokens, rows.Err()
+}
+
 func (s *Storage) RevokePAT(ctx context.Context, id string) error {
 	query := `DELETE FROM pat_tokens WHERE id = $1`
 	res, err := s.db.ExecContext(ctx, query, id)
@@ -400,6 +434,10 @@ func (s *Storage) RevokePAT(ctx context.Context, id string) error {
 		return storage.ErrTokenNotFound
 	}
 	return nil
+}
+
+func (s *Storage) DeletePATToken(ctx context.Context, id string) error {
+	return s.RevokePAT(ctx, id)
 }
 
 func (s *Storage) TouchPAT(ctx context.Context, id string) error {

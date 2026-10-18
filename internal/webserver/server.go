@@ -81,6 +81,9 @@ func NewServer(store storage.Storage, opts ...ServerOption) *Server {
 		opt(s)
 	}
 
+	// Maybe seed demo contracts if configured
+	_ = storage.MaybeSeedDemoData(context.Background(), store)
+
 	// Sync initial contract count metrics from persistent storage
 	_ = s.metrics.SyncContractsFromStorage(context.Background(), store)
 
@@ -104,9 +107,12 @@ func (s *Server) routes() {
 
 	// Protected API routes wrapped with AuthMiddleware
 	apiWrap := s.auth.Wrap
+	s.mux.Handle("/api/v1/me", apiWrap(http.HandlerFunc(s.handleMe)))
 	s.mux.Handle("/api/v1/events", apiWrap(http.HandlerFunc(s.handleEvents)))
 	s.mux.Handle("/api/v1/compatibility/check", apiWrap(http.HandlerFunc(s.handleCompatibilityCheck)))
 	s.mux.Handle("/api/v1/validate", apiWrap(http.HandlerFunc(s.handleValidate)))
+	s.mux.Handle("/api/v1/tokens", apiWrap(http.HandlerFunc(s.handleTokens)))
+	s.mux.Handle("/api/v1/tokens/", apiWrap(http.HandlerFunc(s.handleTokenSubroutes)))
 	s.mux.Handle("/api/v1/events/", apiWrap(http.HandlerFunc(s.handleEventSubroutes)))
 }
 
@@ -210,6 +216,83 @@ func (s *Server) handleEventSubroutes(w http.ResponseWriter, r *http.Request) {
 	// Subroutes: /api/v1/events/{id}/versions...
 	if parts[1] == "versions" {
 		if len(parts) == 2 {
+			if r.Method == http.MethodPost {
+				ev, err := s.store.GetEvent(r.Context(), eventID)
+				if err != nil {
+					if errors.Is(err, storage.ErrEventNotFound) {
+						httputil.WriteProblemSimple(w, http.StatusNotFound, "Event Not Found", fmt.Sprintf("event '%s' not found", eventID))
+						return
+					}
+					httputil.WriteProblemSimple(w, http.StatusInternalServerError, "Internal Server Error", err.Error())
+					return
+				}
+
+				var v core.EventVersion
+				if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
+					httputil.WriteProblemSimple(w, http.StatusBadRequest, "Invalid Request Body", "failed to parse event version JSON body")
+					return
+				}
+
+				var invalidParams []httputil.InvalidParam
+				if strings.TrimSpace(v.SemVer) == "" {
+					invalidParams = append(invalidParams, httputil.InvalidParam{Name: "semver", Reason: "field is required"})
+				}
+				if strings.TrimSpace(v.JSONSchema) == "" {
+					invalidParams = append(invalidParams, httputil.InvalidParam{Name: "json_schema", Reason: "field is required"})
+				}
+				if len(invalidParams) > 0 {
+					httputil.WriteProblem(w, http.StatusBadRequest, "Missing Required Fields", "one or more required fields are missing", invalidParams)
+					return
+				}
+
+				if err := s.validator.ValidateSchema(v.JSONSchema); err != nil {
+					httputil.WriteProblemSimple(w, http.StatusBadRequest, "Invalid JSON Schema", fmt.Sprintf("invalid json schema syntax: %v", err))
+					return
+				}
+
+				v.EventID = eventID
+				v.CreatedAt = time.Now().UTC()
+				if v.ID == "" {
+					v.ID = fmt.Sprintf("ver_%s_%s", strings.ReplaceAll(eventID, ".", "_"), strings.ReplaceAll(v.SemVer, ".", "_"))
+				}
+				if v.Status == "" {
+					v.Status = core.StatusDraft
+				}
+
+				user, ok := auth.UserFromContext(r.Context())
+				if v.CreatedBy == "" {
+					if ok && user != nil && user.Email != "" {
+						v.CreatedBy = user.Email
+					} else {
+						v.CreatedBy = "system"
+					}
+				}
+
+				// Enforce RBAC CanPropose check
+				if ok && user != nil {
+					if !auth.CanPropose(user, ev) {
+						httputil.WriteProblemSimple(w, http.StatusForbidden, "Forbidden", "user is not authorized to propose versions for this team")
+						return
+					}
+				}
+
+				if err := s.store.CreateEventVersion(r.Context(), v); err != nil {
+					if errors.Is(err, storage.ErrConflict) {
+						httputil.WriteProblemSimple(w, http.StatusConflict, "Version Already Exists", fmt.Sprintf("version '%s' for event '%s' already exists", v.SemVer, eventID))
+						return
+					}
+					httputil.WriteProblemSimple(w, http.StatusInternalServerError, "Failed to Create Version", err.Error())
+					return
+				}
+
+				s.metrics.SetContractsTotal(ev.Domain, string(v.Status), 1)
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(w).Encode(v)
+				return
+			}
+
 			versions, err := s.store.ListVersions(r.Context(), eventID)
 			if err != nil {
 				httputil.WriteProblemSimple(w, http.StatusInternalServerError, "Failed to List Versions", err.Error())
@@ -454,6 +537,149 @@ func (s *Server) handleCompatibilityCheck(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (s *Server) handleTokens(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok || user == nil {
+			httputil.WriteProblemSimple(w, http.StatusUnauthorized, "Unauthorized", "user context not found")
+			return
+		}
+
+		var req struct {
+			Name          string `json:"name"`
+			ExpiresInDays int    `json:"expires_in_days"`
+			Team          string `json:"team,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httputil.WriteProblemSimple(w, http.StatusBadRequest, "Invalid Request Body", "failed to parse token request body")
+			return
+		}
+		if strings.TrimSpace(req.Name) == "" {
+			httputil.WriteProblem(w, http.StatusBadRequest, "Missing Required Fields", "token name is required", []httputil.InvalidParam{
+				{Name: "name", Reason: "field is required"},
+			})
+			return
+		}
+
+		ownerEmail := user.Email
+		if ownerEmail == "" {
+			ownerEmail = user.Subject
+		}
+
+		team := req.Team
+		if team == "" && len(user.Teams) > 0 {
+			team = user.Teams[0]
+		}
+		if team == "" {
+			team = "Platform"
+		}
+
+		var expiresAt *time.Time
+		if req.ExpiresInDays > 0 {
+			exp := time.Now().UTC().AddDate(0, 0, req.ExpiresInDays)
+			expiresAt = &exp
+		}
+
+		patEngine := s.auth.PATEngine()
+		if patEngine == nil {
+			patEngine = auth.NewPATEngine(s.store)
+		}
+
+		rawToken, pat, err := patEngine.GeneratePAT(r.Context(), req.Name, ownerEmail, team, expiresAt)
+		if err != nil {
+			httputil.WriteProblemSimple(w, http.StatusInternalServerError, "Token Generation Failed", err.Error())
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":         pat.ID,
+			"name":       pat.Name,
+			"token":      rawToken,
+			"expires_at": pat.ExpiresAt,
+		})
+
+	case http.MethodGet:
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok || user == nil {
+			httputil.WriteProblemSimple(w, http.StatusUnauthorized, "Unauthorized", "user context not found")
+			return
+		}
+
+		tokens, err := s.store.ListPATTokens(r.Context(), user.Email)
+		if err != nil {
+			httputil.WriteProblemSimple(w, http.StatusInternalServerError, "Failed to List Tokens", err.Error())
+			return
+		}
+		if tokens == nil {
+			tokens = []*core.PATToken{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(tokens)
+
+	default:
+		httputil.WriteProblemSimple(w, http.StatusMethodNotAllowed, "Method Not Allowed", fmt.Sprintf("method %s is not allowed", r.Method))
+	}
+}
+
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteProblemSimple(w, http.StatusMethodNotAllowed, "Method Not Allowed", fmt.Sprintf("method %s is not allowed, use GET", r.Method))
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok || user == nil {
+		httputil.WriteProblemSimple(w, http.StatusUnauthorized, "Unauthorized", "user context not found")
+		return
+	}
+
+	teams := user.Teams
+	if teams == nil {
+		teams = []string{}
+	}
+	roles := user.Roles
+	if roles == nil {
+		roles = []string{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"subject":    user.Subject,
+		"sub":        user.Subject,
+		"email":      user.Email,
+		"teams":      teams,
+		"roles":      roles,
+		"is_machine": user.IsMachine,
+	})
+}
+
+func (s *Server) handleTokenSubroutes(w http.ResponseWriter, r *http.Request) {
+	tokenID := strings.TrimPrefix(r.URL.Path, "/api/v1/tokens/")
+	tokenID = strings.Trim(tokenID, "/")
+	if tokenID == "" {
+		s.handleTokens(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodDelete:
+		if err := s.store.DeletePATToken(r.Context(), tokenID); err != nil {
+			if errors.Is(err, storage.ErrTokenNotFound) {
+				httputil.WriteProblemSimple(w, http.StatusNotFound, "Token Not Found", fmt.Sprintf("token '%s' not found", tokenID))
+				return
+			}
+			httputil.WriteProblemSimple(w, http.StatusInternalServerError, "Failed to Delete Token", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		httputil.WriteProblemSimple(w, http.StatusMethodNotAllowed, "Method Not Allowed", fmt.Sprintf("method %s is not allowed", r.Method))
+	}
 }
 
 func (s *Server) handleWebDashboard(w http.ResponseWriter, r *http.Request) {

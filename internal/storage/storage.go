@@ -44,7 +44,9 @@ type Storage interface {
 	SavePAT(ctx context.Context, token core.PATToken) error
 	GetPATByHash(ctx context.Context, tokenHash string) (*core.PATToken, error)
 	ListPATs(ctx context.Context, ownerEmail string) ([]core.PATToken, error)
+	ListPATTokens(ctx context.Context, ownerEmail string) ([]*core.PATToken, error)
 	RevokePAT(ctx context.Context, id string) error
+	DeletePATToken(ctx context.Context, id string) error
 	TouchPAT(ctx context.Context, id string) error
 }
 
@@ -325,6 +327,21 @@ func (s *MemoryStorage) ListPATs(ctx context.Context, ownerEmail string) ([]core
 	return list, nil
 }
 
+// ListPATTokens returns tokens belonging to an owner as pointers (or all if ownerEmail is empty).
+func (s *MemoryStorage) ListPATTokens(ctx context.Context, ownerEmail string) ([]*core.PATToken, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	list := make([]*core.PATToken, 0)
+	for _, token := range s.tokens {
+		if ownerEmail == "" || token.OwnerEmail == ownerEmail {
+			t := token
+			list = append(list, &t)
+		}
+	}
+	return list, nil
+}
+
 // RevokePAT deletes a token by its ID.
 func (s *MemoryStorage) RevokePAT(ctx context.Context, id string) error {
 	s.mu.Lock()
@@ -335,6 +352,11 @@ func (s *MemoryStorage) RevokePAT(ctx context.Context, id string) error {
 	}
 	delete(s.tokens, id)
 	return nil
+}
+
+// DeletePATToken deletes a token by its ID.
+func (s *MemoryStorage) DeletePATToken(ctx context.Context, id string) error {
+	return s.RevokePAT(ctx, id)
 }
 
 // TouchPAT updates the last used timestamp of a token.

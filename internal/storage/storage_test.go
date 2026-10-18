@@ -232,7 +232,7 @@ func TestMemoryStorage_PATOperations(t *testing.T) {
 		t.Errorf("expected LastUsedAt to be set after TouchPAT")
 	}
 
-	// 5. List PATs
+	// 5. List PATs and ListPATTokens
 	pats, err := store.ListPATs(ctx, "ci@company.com")
 	if err != nil {
 		t.Fatalf("failed to list PATs: %v", err)
@@ -241,14 +241,28 @@ func TestMemoryStorage_PATOperations(t *testing.T) {
 		t.Errorf("expected 1 PAT, got %d", len(pats))
 	}
 
-	// 6. Revoke PAT
-	err = store.RevokePAT(ctx, token.ID)
+	patTokens, err := store.ListPATTokens(ctx, "ci@company.com")
 	if err != nil {
-		t.Fatalf("failed to revoke PAT: %v", err)
+		t.Fatalf("failed to list PAT tokens: %v", err)
+	}
+	if len(patTokens) != 1 || patTokens[0].ID != token.ID {
+		t.Errorf("expected 1 PAT token with id %s, got %v", token.ID, patTokens)
+	}
+
+	// 6. Delete PAT Token (via DeletePATToken)
+	err = store.DeletePATToken(ctx, token.ID)
+	if err != nil {
+		t.Fatalf("failed to delete PAT token: %v", err)
 	}
 	_, err = store.GetPATByHash(ctx, token.TokenHash)
 	if !errors.Is(err, ErrTokenNotFound) {
-		t.Fatalf("expected ErrTokenNotFound after revoke, got %v", err)
+		t.Fatalf("expected ErrTokenNotFound after delete, got %v", err)
+	}
+
+	// Deleting again should return ErrTokenNotFound
+	err = store.DeletePATToken(ctx, token.ID)
+	if !errors.Is(err, ErrTokenNotFound) {
+		t.Fatalf("expected ErrTokenNotFound on deleting non-existent token, got %v", err)
 	}
 }
 

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexagc/kalyx/internal/auth"
 	"github.com/alexagc/kalyx/internal/cli"
 	"github.com/alexagc/kalyx/internal/core"
 	"github.com/alexagc/kalyx/internal/storage"
@@ -139,7 +141,7 @@ func TestCLILogin(t *testing.T) {
 		t.Fatalf("kalyxctl login failed: %v\nOutput: %s", err, out)
 	}
 
-	if !strings.Contains(out, "Successfully authenticated with Kalyx") {
+	if !strings.Contains(out, "Successfully authenticated as") || !strings.Contains(out, "with Kalyx!") {
 		t.Errorf("expected success message in output: %s", out)
 	}
 
@@ -342,3 +344,280 @@ func TestCLIGenerateDeprecatedEventWarning(t *testing.T) {
 		t.Fatalf("generated deprecated Go file has syntax errors: %v", parseErr)
 	}
 }
+
+func TestCLILogin_ValidAndInvalid(t *testing.T) {
+	tempHome := t.TempDir()
+	env := []string{
+		"USERPROFILE=" + tempHome,
+		"HOME=" + tempHome,
+		"KALYX_AUTH_DISABLED=false",
+	}
+
+	// Setup server with active authentication enforcement
+	store := storage.NewMemoryStorage()
+	ctx := context.Background()
+
+	patEngine := auth.NewPATEngine(store)
+	validToken, _, err := patEngine.GeneratePAT(ctx, "cli-dev-pat", "alice@company.com", "Identity", nil)
+	if err != nil {
+		t.Fatalf("failed to create valid PAT: %v", err)
+	}
+
+	server := webserver.NewServer(store, webserver.WithAuthDisabled(false))
+	ts := httptest.NewServer(server)
+	defer ts.Close()
+
+	// 1. Invalid Token test - must fail handshake and NOT save config
+	invalidOut, err := runCLI(t, "", env, "login", "--token", "kalyx_sec_invalid_token_999", "--server", ts.URL, "--profile", "invalid-profile")
+	if err == nil {
+		t.Fatalf("expected kalyxctl login to fail with invalid token, but it succeeded:\n%s", invalidOut)
+	}
+	if !strings.Contains(invalidOut, "Error: Failed to authenticate with Kalyx server") {
+		t.Errorf("expected failure error message in output, got:\n%s", invalidOut)
+	}
+
+	// Verify config profile was NOT saved
+	configPath := filepath.Join(tempHome, ".kalyx", "config.yaml")
+	if cfg, err := cli.LoadGlobalConfig(configPath); err == nil {
+		if _, exists := cfg.Profiles["invalid-profile"]; exists {
+			t.Errorf("token profile 'invalid-profile' should not have been saved on failed login")
+		}
+	}
+
+	// 2. Valid Token test - must succeed handshake and save profile
+	validOut, err := runCLI(t, "", env, "login", "--token", validToken, "--server", ts.URL, "--profile", "valid-profile")
+	if err != nil {
+		t.Fatalf("kalyxctl login failed with valid token: %v\nOutput: %s", err, validOut)
+	}
+	if !strings.Contains(validOut, "Successfully authenticated as alice@company.com") || !strings.Contains(validOut, "with Kalyx!") {
+		t.Errorf("expected success message in output, got:\n%s", validOut)
+	}
+
+	// Verify profile was saved properly
+	cfg, err := cli.LoadGlobalConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load saved config: %v", err)
+	}
+	if prof, ok := cfg.Profiles["valid-profile"]; !ok || prof.Token != validToken {
+		t.Errorf("expected valid-profile token to be saved as '%s', got '%+v'", validToken, prof)
+	}
+}
+
+func TestCLIList(t *testing.T) {
+	ts, store := setupTestServer(t)
+	defer ts.Close()
+	ctx := context.Background()
+
+	// Register another event in store
+	event3 := core.EventDefinition{
+		ID:          "ev_payments_processed",
+		Domain:      "Payments",
+		Name:        "PaymentProcessed",
+		Type:        "com.company.payments.processed.v1",
+		Description: "Payment processed event",
+		OwnerTeam:   "Payments Core",
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	if err := store.CreateEvent(ctx, event3); err != nil {
+		t.Fatalf("failed to create event: %v", err)
+	}
+
+	// 1. Table format (default)
+	out, err := runCLI(t, "", nil, "list", "--server", ts.URL)
+	if err != nil {
+		t.Fatalf("kalyxctl list failed: %v\nOutput: %s", err, out)
+	}
+	if !strings.Contains(out, "ID") || !strings.Contains(out, "NAME") || !strings.Contains(out, "TYPE") {
+		t.Errorf("expected table header in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "UserRegistered") || !strings.Contains(out, "OrderCompleted") || !strings.Contains(out, "PaymentProcessed") {
+		t.Errorf("expected events in table output, got:\n%s", out)
+	}
+
+	// 2. Domain filter
+	outOrders, err := runCLI(t, "", nil, "list", "--domain", "Orders", "--server", ts.URL)
+	if err != nil {
+		t.Fatalf("kalyxctl list with domain failed: %v\nOutput: %s", err, outOrders)
+	}
+	if !strings.Contains(outOrders, "OrderCompleted") {
+		t.Errorf("expected OrderCompleted in filtered output, got:\n%s", outOrders)
+	}
+	if strings.Contains(outOrders, "UserRegistered") {
+		t.Errorf("expected UserRegistered to be filtered out, got:\n%s", outOrders)
+	}
+
+	// 3. JSON format
+	outJSON, err := runCLI(t, "", nil, "list", "--json", "--server", ts.URL)
+	if err != nil {
+		t.Fatalf("kalyxctl list --json failed: %v\nOutput: %s", err, outJSON)
+	}
+	var events []core.EventDefinition
+	if err := json.Unmarshal([]byte(outJSON), &events); err != nil {
+		t.Fatalf("failed to parse list --json output: %v\nRaw output: %s", err, outJSON)
+	}
+	if len(events) < 2 {
+		t.Errorf("expected at least 2 events in JSON output, got %d", len(events))
+	}
+}
+
+func TestCLIValidate(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	tempDir := t.TempDir()
+
+	schemaContent := `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PaymentEventPayload",
+  "type": "object",
+  "properties": {
+    "payment_id": { "type": "string" },
+    "amount": { "type": "number", "minimum": 1.0 }
+  },
+  "required": ["payment_id", "amount"]
+}`
+	schemaPath := filepath.Join(tempDir, "payment_schema.json")
+	if err := os.WriteFile(schemaPath, []byte(schemaContent), 0644); err != nil {
+		t.Fatalf("failed to write schema file: %v", err)
+	}
+
+	validEventContent := `{
+  "specversion": "1.0",
+  "id": "pay-101",
+  "source": "https://billing.company.com",
+  "type": "com.company.payments.processed.v1",
+  "time": "2026-10-18T10:00:00Z",
+  "datacontenttype": "application/json",
+  "data": {
+    "payment_id": "pay_xyz",
+    "amount": 49.99
+  }
+}`
+	validEventPath := filepath.Join(tempDir, "valid_event.json")
+	if err := os.WriteFile(validEventPath, []byte(validEventContent), 0644); err != nil {
+		t.Fatalf("failed to write valid event file: %v", err)
+	}
+
+	invalidEventContent := `{
+  "specversion": "1.0",
+  "id": "pay-102",
+  "source": "https://billing.company.com",
+  "type": "com.company.payments.processed.v1",
+  "time": "2026-10-18T10:00:00Z",
+  "datacontenttype": "application/json",
+  "data": {
+    "payment_id": "pay_xyz"
+  }
+}`
+	invalidEventPath := filepath.Join(tempDir, "invalid_event.json")
+	if err := os.WriteFile(invalidEventPath, []byte(invalidEventContent), 0644); err != nil {
+		t.Fatalf("failed to write invalid event file: %v", err)
+	}
+
+	// 1. Valid event validation
+	outValid, err := runCLI(t, "", nil, "validate", validEventPath, "--schema", schemaPath, "--server", ts.URL)
+	if err != nil {
+		t.Fatalf("kalyxctl validate failed for valid event: %v\nOutput: %s", err, outValid)
+	}
+	if !strings.Contains(outValid, "CloudEvent is valid against contract schema") {
+		t.Errorf("expected success message in validate output, got:\n%s", outValid)
+	}
+
+	// 2. Invalid event validation (must exit with code 1 and show missing field)
+	outInvalid, err := runCLI(t, "", nil, "validate", invalidEventPath, "--schema", schemaPath, "--server", ts.URL)
+	if err == nil {
+		t.Fatalf("expected kalyxctl validate to fail on invalid event, but succeeded:\n%s", outInvalid)
+	}
+	if !strings.Contains(outInvalid, "CloudEvent validation failed") || !strings.Contains(outInvalid, "data.amount") {
+		t.Errorf("expected validation failure details in output, got:\n%s", outInvalid)
+	}
+}
+
+func TestCLICheck(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	tempDir := t.TempDir()
+
+	oldSchema := `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "order_id": { "type": "string" },
+    "amount": { "type": "number" }
+  },
+  "required": ["order_id"]
+}`
+	oldPath := filepath.Join(tempDir, "old_schema.json")
+	if err := os.WriteFile(oldPath, []byte(oldSchema), 0644); err != nil {
+		t.Fatalf("failed to write old schema: %v", err)
+	}
+
+	compatSchema := `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "order_id": { "type": "string" },
+    "amount": { "type": "number" },
+    "currency": { "type": "string" }
+  },
+  "required": ["order_id"]
+}`
+	compatPath := filepath.Join(tempDir, "compat_schema.json")
+	if err := os.WriteFile(compatPath, []byte(compatSchema), 0644); err != nil {
+		t.Fatalf("failed to write compat schema: %v", err)
+	}
+
+	breakingSchema := `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "order_id": { "type": "string" },
+    "customer_id": { "type": "string" }
+  },
+  "required": ["order_id", "customer_id"]
+}`
+	breakingPath := filepath.Join(tempDir, "breaking_schema.json")
+	if err := os.WriteFile(breakingPath, []byte(breakingSchema), 0644); err != nil {
+		t.Fatalf("failed to write breaking schema: %v", err)
+	}
+
+	// 1. Compatible check
+	outCompat, err := runCLI(t, "", nil, "check", oldPath, compatPath, "--server", ts.URL)
+	if err != nil {
+		t.Fatalf("kalyxctl check failed on compatible schema: %v\nOutput: %s", err, outCompat)
+	}
+	if !strings.Contains(outCompat, "Schemas are backward compatible") || !strings.Contains(outCompat, "MINOR") {
+		t.Errorf("expected backward compatible message in output, got:\n%s", outCompat)
+	}
+
+	// 2. Breaking check (must exit with code 1)
+	outBreaking, err := runCLI(t, "", nil, "check", oldPath, breakingPath, "--server", ts.URL)
+	if err == nil {
+		t.Fatalf("expected kalyxctl check to fail on breaking schema, but succeeded:\n%s", outBreaking)
+	}
+	if !strings.Contains(outBreaking, "BREAKING SCHEMA CHANGE DETECTED") || !strings.Contains(outBreaking, "MAJOR") {
+		t.Errorf("expected breaking change detection message in output, got:\n%s", outBreaking)
+	}
+}
+
+func TestCLIToken(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	out, err := runCLI(t, "", nil, "token", "create", "--name", "ci-build-pat", "--server", ts.URL)
+	if err != nil {
+		t.Fatalf("kalyxctl token create failed: %v\nOutput: %s", err, out)
+	}
+	if !strings.Contains(out, "Personal Access Token 'ci-build-pat' created successfully") {
+		t.Errorf("expected token creation confirmation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Token: kalyx_sec_") {
+		t.Errorf("expected PAT token format in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "WARNING: Store this token securely") {
+		t.Errorf("expected warning message in output, got:\n%s", out)
+	}
+}
+

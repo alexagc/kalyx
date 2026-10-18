@@ -588,4 +588,376 @@ func TestServer_WebDashboard_EmbeddedUI(t *testing.T) {
 	}
 }
 
+func TestServer_Tokens(t *testing.T) {
+	server, _ := setupTestServer(t)
+
+	// POST /api/v1/tokens - create new token
+	body := `{"name": "GitLab CI Runner", "expires_in_days": 30}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed decoding json: %v", err)
+	}
+
+	tokenStr, ok := res["token"].(string)
+	if !ok || !strings.HasPrefix(tokenStr, "kalyx_sec_") {
+		t.Errorf("expected token starting with kalyx_sec_, got %v", res["token"])
+	}
+	if res["name"] != "GitLab CI Runner" {
+		t.Errorf("expected name 'GitLab CI Runner', got %v", res["name"])
+	}
+
+	// GET /api/v1/tokens - list tokens
+	reqList := httptest.NewRequest(http.MethodGet, "/api/v1/tokens", nil)
+	recList := httptest.NewRecorder()
+	server.ServeHTTP(recList, reqList)
+
+	if recList.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", recList.Code, recList.Body.String())
+	}
+}
+
+func TestServer_WebDashboard_HTMLIntegrity(t *testing.T) {
+	server, _ := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+
+	html := rec.Body.String()
+
+	// Verify key dynamic features are present
+	requiredSnippets := []string{
+		"loadLiveCatalog()",
+		"getAuthHeaders()",
+		"handleDraftInput(",
+		"updateSemVerDiagnostic(",
+		"generateTokenPrompt()",
+		"updateSessionTokenUI()",
+		"saveSessionToken()",
+		"clearSessionToken()",
+		"session-pat-input",
+		"active-token-badge",
+		"/api/v1/events",
+		"/api/v1/compatibility/check",
+		"/api/v1/tokens",
+	}
+
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(html, snippet) {
+			t.Errorf("expected HTML to contain snippet %q", snippet)
+		}
+	}
+
+	// Verify crucial opening and closing tag counts match
+	tags := []string{"html", "body", "head", "main", "aside"}
+	for _, tag := range tags {
+		openCount := strings.Count(html, "<"+tag+">") + strings.Count(html, "<"+tag+" ")
+		closeCount := strings.Count(html, "</"+tag+">")
+		if openCount != closeCount {
+			t.Errorf("mismatched tag %s: %d open vs %d close", tag, openCount, closeCount)
+		}
+	}
+}
+
+func TestServer_Me(t *testing.T) {
+	// 1. With auth disabled (dev mode) -> returns devUser
+	server, _ := setupTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /api/v1/me, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed decoding json: %v", err)
+	}
+
+	if res["email"] != "developer@kalyx.local" {
+		t.Errorf("expected developer@kalyx.local, got %v", res["email"])
+	}
+	if res["subject"] != "dev_user" {
+		t.Errorf("expected subject dev_user, got %v", res["subject"])
+	}
+
+	// 2. With auth enabled without Authorization header -> 401 Unauthorized
+	t.Setenv("KALYX_AUTH_DISABLED", "false")
+	store := storage.NewMemoryStorage()
+	authServer := NewServer(store, WithAuthDisabled(false))
+	reqNoAuth := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	recNoAuth := httptest.NewRecorder()
+	authServer.ServeHTTP(recNoAuth, reqNoAuth)
+
+	if recNoAuth.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d: %s", recNoAuth.Code, recNoAuth.Body.String())
+	}
+	if recNoAuth.Header().Get("Content-Type") != "application/problem+json" {
+		t.Errorf("expected application/problem+json, got %s", recNoAuth.Header().Get("Content-Type"))
+	}
+
+	// 3. With valid PAT -> 200 OK with PAT identity
+	patEngine := auth.NewPATEngine(store)
+	rawToken, _, err := patEngine.GeneratePAT(context.Background(), "Me PAT", "pat_owner@company.com", "platform", nil)
+	if err != nil {
+		t.Fatalf("failed to generate PAT: %v", err)
+	}
+
+	reqAuth := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	reqAuth.Header.Set("Authorization", "Bearer "+rawToken)
+	recAuth := httptest.NewRecorder()
+	authServer.ServeHTTP(recAuth, reqAuth)
+
+	if recAuth.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with valid PAT, got %d: %s", recAuth.Code, recAuth.Body.String())
+	}
+	var resAuth map[string]any
+	_ = json.Unmarshal(recAuth.Body.Bytes(), &resAuth)
+	if resAuth["email"] != "pat_owner@company.com" {
+		t.Errorf("expected email pat_owner@company.com, got %v", resAuth["email"])
+	}
+}
+
+func TestServer_Tokens_FullLifecycle(t *testing.T) {
+	server, _ := setupTestServer(t)
+
+	// 1. POST /api/v1/tokens with missing name -> 400 Bad Request
+	reqMissing := httptest.NewRequest(http.MethodPost, "/api/v1/tokens", strings.NewReader(`{"expires_in_days": 30}`))
+	recMissing := httptest.NewRecorder()
+	server.ServeHTTP(recMissing, reqMissing)
+
+	if recMissing.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for missing name, got %d: %s", recMissing.Code, recMissing.Body.String())
+	}
+
+	// 2. POST /api/v1/tokens valid -> 201 Created
+	reqCreate := httptest.NewRequest(http.MethodPost, "/api/v1/tokens", strings.NewReader(`{"name": "Deploy Agent", "expires_in_days": 14}`))
+	recCreate := httptest.NewRecorder()
+	server.ServeHTTP(recCreate, reqCreate)
+
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", recCreate.Code, recCreate.Body.String())
+	}
+
+	var created map[string]any
+	if err := json.Unmarshal(recCreate.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed decoding json: %v", err)
+	}
+
+	tokenID, ok := created["id"].(string)
+	if !ok || tokenID == "" {
+		t.Fatalf("expected non-empty token id, got %v", created["id"])
+	}
+	rawToken, ok := created["token"].(string)
+	if !ok || !strings.HasPrefix(rawToken, "kalyx_sec_") {
+		t.Fatalf("expected raw token starting with kalyx_sec_, got %v", created["token"])
+	}
+
+	// 3. GET /api/v1/tokens -> list tokens
+	reqList := httptest.NewRequest(http.MethodGet, "/api/v1/tokens", nil)
+	recList := httptest.NewRecorder()
+	server.ServeHTTP(recList, reqList)
+
+	if recList.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", recList.Code, recList.Body.String())
+	}
+
+	var tokenList []core.PATToken
+	if err := json.Unmarshal(recList.Body.Bytes(), &tokenList); err != nil {
+		t.Fatalf("failed decoding tokens list: %v", err)
+	}
+	found := false
+	for _, tk := range tokenList {
+		if tk.ID == tokenID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("created token %s not found in list response", tokenID)
+	}
+
+	// 4. DELETE /api/v1/tokens/{id} -> 204 No Content
+	reqDelete := httptest.NewRequest(http.MethodDelete, "/api/v1/tokens/"+tokenID, nil)
+	recDelete := httptest.NewRecorder()
+	server.ServeHTTP(recDelete, reqDelete)
+
+	if recDelete.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 No Content, got %d: %s", recDelete.Code, recDelete.Body.String())
+	}
+
+	// 5. DELETE non-existent token -> 404 Not Found
+	reqDeleteAgain := httptest.NewRequest(http.MethodDelete, "/api/v1/tokens/"+tokenID, nil)
+	recDeleteAgain := httptest.NewRecorder()
+	server.ServeHTTP(recDeleteAgain, reqDeleteAgain)
+
+	if recDeleteAgain.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found on already deleted token, got %d: %s", recDeleteAgain.Code, recDeleteAgain.Body.String())
+	}
+}
+
+func TestServer_CreateEventVersion(t *testing.T) {
+	server, store := setupTestServer(t)
+	ctx := context.Background()
+
+	// Register test event
+	eventID := "orders.created"
+	_ = store.CreateEvent(ctx, core.EventDefinition{
+		ID:        eventID,
+		Domain:    "Orders",
+		Name:      "OrderCreated",
+		Type:      "com.company.orders.created.v1",
+		OwnerTeam: "checkout",
+	})
+
+	validSchema := `{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"type": "object",
+		"properties": {
+			"order_id": {"type": "string"},
+			"total": {"type": "number"}
+		},
+		"required": ["order_id", "total"]
+	}`
+
+	// 1. Success -> 201 Created
+	payload := fmt.Sprintf(`{
+		"semver": "1.0.0",
+		"json_schema": %q,
+		"status": "approved"
+	}`, validSchema)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events/"+eventID+"/versions", strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var saved core.EventVersion
+	if err := json.Unmarshal(rec.Body.Bytes(), &saved); err != nil {
+		t.Fatalf("failed decoding event version: %v", err)
+	}
+	if saved.EventID != eventID {
+		t.Errorf("expected EventID %s, got %s", eventID, saved.EventID)
+	}
+	if saved.SemVer != "1.0.0" {
+		t.Errorf("expected SemVer 1.0.0, got %s", saved.SemVer)
+	}
+	if saved.CreatedBy == "" {
+		t.Errorf("expected CreatedBy to be populated")
+	}
+
+	// 2. Duplicate semver -> 409 Conflict
+	reqDup := httptest.NewRequest(http.MethodPost, "/api/v1/events/"+eventID+"/versions", strings.NewReader(payload))
+	recDup := httptest.NewRecorder()
+	server.ServeHTTP(recDup, reqDup)
+
+	if recDup.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict for duplicate version, got %d: %s", recDup.Code, recDup.Body.String())
+	}
+
+	// 3. Missing required fields (semver or json_schema) -> 400 Bad Request
+	reqMissing := httptest.NewRequest(http.MethodPost, "/api/v1/events/"+eventID+"/versions", strings.NewReader(`{"semver": ""}`))
+	recMissing := httptest.NewRecorder()
+	server.ServeHTTP(recMissing, reqMissing)
+
+	if recMissing.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for missing fields, got %d: %s", recMissing.Code, recMissing.Body.String())
+	}
+
+	// 4. Invalid json_schema syntax -> 400 Bad Request
+	badSchemaPayload := `{"semver": "1.1.0", "json_schema": "not a valid json"}`
+	reqBadSchema := httptest.NewRequest(http.MethodPost, "/api/v1/events/"+eventID+"/versions", strings.NewReader(badSchemaPayload))
+	recBadSchema := httptest.NewRecorder()
+	server.ServeHTTP(recBadSchema, reqBadSchema)
+
+	if recBadSchema.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for invalid schema syntax, got %d: %s", recBadSchema.Code, recBadSchema.Body.String())
+	}
+
+	// 5. Non-existent event -> 404 Not Found
+	reqNotFound := httptest.NewRequest(http.MethodPost, "/api/v1/events/non.existent/versions", strings.NewReader(payload))
+	recNotFound := httptest.NewRecorder()
+	server.ServeHTTP(recNotFound, reqNotFound)
+
+	if recNotFound.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for missing event, got %d: %s", recNotFound.Code, recNotFound.Body.String())
+	}
+}
+
+func TestServer_CreateEventVersion_RBAC(t *testing.T) {
+	t.Setenv("KALYX_AUTH_DISABLED", "false")
+	store := storage.NewMemoryStorage()
+	secret := []byte("test-secret-at-least-32-bytes-long!!")
+	oidc := auth.NewOIDCEngine(auth.OIDCConfig{
+		Secret: secret,
+	})
+	server := NewServer(store, WithOIDCEngine(oidc), WithAuthDisabled(false))
+
+	// Event owned by "checkout"
+	ctx := context.Background()
+	_ = store.CreateEvent(ctx, core.EventDefinition{
+		ID:        "orders.restricted",
+		Domain:    "Orders",
+		Name:      "RestrictedOrder",
+		Type:      "com.company.orders.restricted.v1",
+		OwnerTeam: "checkout",
+	})
+
+	validSchema := `{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object"}`
+	versionPayload := fmt.Sprintf(`{"semver": "1.0.0", "json_schema": %q}`, validSchema)
+
+	// User in "payments" team tries to propose for "checkout" event -> 403 Forbidden
+	otherTeamClaims := &auth.JWTClaims{
+		Subject:   "usr_payments",
+		Email:     "payments_dev@company.com",
+		Groups:    []any{"payments-member"},
+		ExpiresAt: time.Now().Add(time.Hour).Unix(),
+	}
+	otherToken, _ := auth.SignTestHS256Token(otherTeamClaims, secret)
+
+	reqForbidden := httptest.NewRequest(http.MethodPost, "/api/v1/events/orders.restricted/versions", strings.NewReader(versionPayload))
+	reqForbidden.Header.Set("Authorization", "Bearer "+otherToken)
+	recForbidden := httptest.NewRecorder()
+	server.ServeHTTP(recForbidden, reqForbidden)
+
+	if recForbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for cross-team propose, got %d: %s", recForbidden.Code, recForbidden.Body.String())
+	}
+
+	// User in "checkout" team proposes -> 201 Created
+	checkoutClaims := &auth.JWTClaims{
+		Subject:   "usr_checkout",
+		Email:     "checkout_dev@company.com",
+		Groups:    []any{"checkout-member"},
+		ExpiresAt: time.Now().Add(time.Hour).Unix(),
+	}
+	checkoutToken, _ := auth.SignTestHS256Token(checkoutClaims, secret)
+
+	reqAllowed := httptest.NewRequest(http.MethodPost, "/api/v1/events/orders.restricted/versions", strings.NewReader(versionPayload))
+	reqAllowed.Header.Set("Authorization", "Bearer "+checkoutToken)
+	recAllowed := httptest.NewRecorder()
+	server.ServeHTTP(recAllowed, reqAllowed)
+
+	if recAllowed.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for team member, got %d: %s", recAllowed.Code, recAllowed.Body.String())
+	}
+}
+
+
 

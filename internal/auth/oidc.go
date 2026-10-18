@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/alexagc/kalyx/internal/core"
 )
 
 // Kalyx standard authorization roles.
@@ -30,39 +32,7 @@ var (
 )
 
 // UserContext carries the authenticated identity, assigned teams, and resolved roles.
-type UserContext struct {
-	Subject   string   `json:"sub"`
-	Email     string   `json:"email"`
-	Teams     []string `json:"teams"`
-	Roles     []string `json:"roles"`
-	IsMachine bool     `json:"is_machine"`
-}
-
-// HasRole returns true if the user possesses the specified role.
-func (u *UserContext) HasRole(role string) bool {
-	if u == nil {
-		return false
-	}
-	for _, r := range u.Roles {
-		if strings.EqualFold(r, role) {
-			return true
-		}
-	}
-	return false
-}
-
-// IsInTeam returns true if the user is a member of the specified team.
-func (u *UserContext) IsInTeam(team string) bool {
-	if u == nil || team == "" {
-		return false
-	}
-	for _, t := range u.Teams {
-		if strings.EqualFold(t, team) {
-			return true
-		}
-	}
-	return false
-}
+type UserContext = core.UserContext
 
 // JWTHeader represents the standard JWT JOSE header.
 type JWTHeader struct {

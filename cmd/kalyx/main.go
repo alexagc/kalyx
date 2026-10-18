@@ -27,6 +27,10 @@ func main() {
 	}
 	defer store.Close()
 
+	if err := storage.MaybeSeedDemoData(ctx, store); err != nil {
+		slog.Warn("Failed to seed demo data", "error", err)
+	}
+
 	server := webserver.NewServer(store)
 
 	addr := fmt.Sprintf(":%s", port)

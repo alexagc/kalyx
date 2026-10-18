@@ -779,6 +779,36 @@
             <p class="text-xs text-outline font-mono mt-0.5">Manage Personal Access Tokens (PAT) and inspect OIDC claim group mappings</p>
           </div>
 
+          <!-- Active Dashboard Session Token (localStorage) -->
+          <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col gap-4">
+            <div class="border-b border-outline-variant/60 pb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div>
+                <h2 class="text-sm font-semibold text-on-surface flex items-center gap-2">
+                  <span class="material-symbols-outlined text-primary">security</span> Active Dashboard Session Token (localStorage)
+                </h2>
+                <p class="text-xs text-outline font-mono mt-0.5">Authorization header injected into live /api/v1/* requests. Stored in client localStorage ('kalyx_token').</p>
+              </div>
+              <div id="active-token-badge" class="font-mono text-xs px-2.5 py-1 rounded bg-surface-container text-outline border border-outline-variant">
+                No active token (Anonymous / Dev Mode)
+              </div>
+            </div>
+
+            <div class="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+              <div class="relative flex-1">
+                <input id="session-pat-input" type="password" placeholder="Paste personal access token (kalyx_sec_...) or set via generator below" class="w-full h-9 px-3 rounded bg-surface-container border border-outline-variant font-mono text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-primary pr-20" />
+                <button type="button" onclick="toggleTokenVisibility()" id="btn-toggle-token" class="absolute right-2 top-2 text-outline hover:text-on-surface font-mono text-[10px] uppercase">Show</button>
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="saveSessionToken()" class="h-9 px-3 rounded bg-primary-container hover:bg-primary text-on-primary text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm">
+                  <span class="material-symbols-outlined text-[15px]">save</span> Save Active Token
+                </button>
+                <button onclick="clearSessionToken()" class="h-9 px-3 rounded bg-surface-container hover:bg-surface-container-high border border-outline-variant text-outline hover:text-error text-xs font-medium flex items-center gap-1.5 transition-colors">
+                  <span class="material-symbols-outlined text-[15px]">delete</span> Clear
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- PAT Tokens -->
           <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col gap-4">
             <div class="flex justify-between items-center border-b border-outline-variant/60 pb-3">
@@ -863,7 +893,7 @@
 
   <!-- CLIENT-SIDE APPLICATION SCRIPT -->
   <script>
-    const CONTRACTS_DATA = [
+    const MOCK_CONTRACTS_DATA = [
       { id: "orders.order.completed", name: "OrderCompleted", type: "orders.order.completed.v1", domain: "Orders", version: "v1.2.0", status: "approved", pii: 1, lake: "Iceberg & Delta", team: "Checkout Core" },
       { id: "payments.payment.processed", name: "PaymentProcessed", type: "payments.payment.processed.v1", domain: "Payments", version: "v2.0.0", status: "approved", pii: 2, lake: "Iceberg & Delta v3", team: "Billing Team" },
       { id: "orders.cart.abandoned", name: "CartAbandoned", type: "orders.cart.abandoned.v1", domain: "Orders", version: "v0.9.0", status: "in_review", pii: 1, lake: "Iceberg", team: "Growth & Funnel" },
@@ -871,6 +901,38 @@
       { id: "inventory.item.reserved", name: "InventoryReserved", type: "inventory.item.reserved.v1", domain: "Inventory", version: "v1.0.0", status: "approved", pii: 0, lake: "Iceberg", team: "Supply Chain" },
       { id: "orders.shipment.dispatched", name: "ShipmentDispatched", type: "orders.shipment.dispatched.v1", domain: "Orders", version: "v1.1.0", status: "approved", pii: 1, lake: "Iceberg & Delta", team: "Logistics Core" }
     ];
+
+    let CONTRACTS_DATA = [...MOCK_CONTRACTS_DATA];
+
+    function getAuthHeaders() {
+      const token = localStorage.getItem('kalyx_token');
+      return token ? { 'Authorization': 'Bearer ' + token } : {};
+    }
+
+    async function loadLiveCatalog() {
+      try {
+        const res = await fetch('/api/v1/events', { headers: getAuthHeaders() });
+        if (res.status === 200) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            CONTRACTS_DATA = data.map(ev => ({
+              id: ev.id,
+              name: ev.name || ev.id,
+              type: ev.type || ev.id,
+              domain: ev.domain || "General",
+              team: ev.owner_team || "Platform",
+              version: "v1.0.0",
+              status: "approved",
+              pii: 0,
+              lake: "Iceberg"
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn("Offline or failed live catalog fetch, preserving mock contracts:", err);
+      }
+      renderCatalogTable();
+    }
 
     let currentDomainFilter = "ALL";
     let piiOnlyFilter = false;
@@ -980,6 +1042,7 @@
         document.getElementById("view-settings").classList.remove("hidden");
         document.getElementById("nav-settings").className = "flex items-center justify-between px-2.5 py-2 rounded-r transition-colors bg-surface-container-high text-primary border-l-2 border-primary-container font-medium w-full text-left";
         breadcrumb.innerText = "Access Tokens & Settings";
+        updateSessionTokenUI();
       } else {
         document.getElementById("view-catalog").classList.remove("hidden");
         document.getElementById("nav-catalog").className = "flex items-center justify-between px-2.5 py-2 rounded-r transition-colors bg-surface-container-high text-primary border-l-2 border-primary-container font-medium w-full text-left";
@@ -1075,9 +1138,100 @@
       navigate('reviews');
     }
 
+    let draftDebounceTimer = null;
+
+    function handleDraftInput(val) {
+      clearTimeout(draftDebounceTimer);
+      draftDebounceTimer = setTimeout(async () => {
+        const baseElem = document.getElementById("diff-left-base");
+        const baseSchema = baseElem ? baseElem.innerText.trim() : "";
+        const draftElem = document.getElementById("diff-right-draft");
+        const draftSchema = (val !== undefined ? val : (draftElem ? draftElem.value : "")).trim();
+
+        try {
+          const res = await fetch('/api/v1/compatibility/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ old_schema: baseSchema, new_schema: draftSchema })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            updateSemVerDiagnostic(data.is_compatible, data.change_type, data.reasons || []);
+          }
+        } catch (err) {
+          console.warn("Live compatibility check failed, simulation buttons remain available:", err);
+        }
+      }, 300);
+    }
+
+    function updateSemVerDiagnostic(isCompatible, changeType, reasons) {
+      const card = document.getElementById("semver-diagnostic-card");
+      const badge = document.getElementById("diag-badge");
+      const rule = document.getElementById("diag-rule");
+      const ver = document.getElementById("diag-target-ver");
+      const desc = document.getElementById("diag-desc");
+      const lake = document.getElementById("diag-lake");
+      const gate = document.getElementById("diag-gate");
+      const safeBtn = document.getElementById("sim-safe-btn");
+      const breakBtn = document.getElementById("sim-breaking-btn");
+      const statText = document.getElementById("diff-stat-text");
+
+      const reasonsText = Array.isArray(reasons) && reasons.length > 0
+        ? reasons.join(", ")
+        : (isCompatible ? "Backward-compatible schema change detected." : "Breaking changes detected.");
+
+      if (isCompatible) {
+        if (card) card.className = "p-4 rounded border border-tertiary/40 bg-gradient-to-r from-surface-container-low via-surface-container-low to-tertiary-container/5 shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4";
+        if (badge) {
+          badge.className = "px-2 py-0.5 rounded bg-tertiary-container/20 border border-tertiary/40 text-tertiary font-bold";
+          badge.innerText = "COMPATIBLE CHANGE DETECTED (" + (changeType || "MINOR") + ")";
+        }
+        if (rule) rule.innerText = "RULE: " + (changeType === "PATCH" ? "METADATA_UPDATE" : "ADD_OPTIONAL_FIELD");
+        if (ver) ver.innerText = changeType === "PATCH" ? "v1.2.1" : "v1.3.0";
+        if (desc) desc.innerText = reasonsText;
+        if (lake) lake.innerText = "Data Lake Bridge Impact: Fully backward compatible with Apache Iceberg Schema Evolution.";
+        if (gate) {
+          gate.innerText = "Ready for Review";
+          gate.className = "text-xs font-bold text-tertiary font-mono";
+        }
+        if (safeBtn) safeBtn.className = "px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary font-semibold";
+        if (breakBtn) breakBtn.className = "px-2 py-0.5 rounded text-outline hover:text-on-surface font-semibold";
+        if (statText) {
+          statText.className = "text-tertiary font-semibold";
+          statText.innerText = "Live Verification: Schema backward-compatible (" + (changeType || "MINOR") + ")";
+        }
+      } else {
+        if (card) card.className = "p-4 rounded border border-error/40 bg-gradient-to-r from-surface-container-low via-surface-container-low to-error-container/10 shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4";
+        if (badge) {
+          badge.className = "px-2 py-0.5 rounded bg-error-container/30 border border-error/50 text-error font-bold";
+          badge.innerText = "MAJOR BREAKING CHANGE DETECTED";
+        }
+        if (rule) rule.innerText = "RULE: REMOVED_FIELD / TYPE_COLLISION";
+        if (ver) ver.innerText = "v2.0.0";
+        if (desc) desc.innerText = reasonsText;
+        if (lake) lake.innerText = "Data Lake Bridge Impact: Breaking schema change requiring Iceberg table migration and Data Steward sign-off.";
+        if (gate) {
+          gate.innerText = "Requires Data Steward Gate";
+          gate.className = "text-xs font-bold text-error font-mono";
+        }
+        if (safeBtn) safeBtn.className = "px-2 py-0.5 rounded text-outline hover:text-on-surface font-semibold";
+        if (breakBtn) breakBtn.className = "px-2 py-0.5 rounded bg-error-container text-error font-semibold";
+        if (statText) {
+          statText.className = "text-error font-semibold";
+          statText.innerText = "Live Verification: Breaking schema change detected";
+        }
+      }
+    }
+
     function revertDraft() {
-      document.getElementById("diff-right-draft").value = document.getElementById("diff-left-base").innerText;
+      const baseElem = document.getElementById("diff-left-base");
+      const baseText = baseElem ? baseElem.innerText : "";
+      const draftElem = document.getElementById("diff-right-draft");
+      if (draftElem) {
+        draftElem.value = baseText;
+      }
       simulateScenario(false);
+      handleDraftInput(baseText);
       copyToast("Reverted draft to v1.2.0 active schema", "info");
     }
 
@@ -1105,12 +1259,121 @@
       }
     }
 
-    function generateTokenPrompt() {
+    async function generateTokenPrompt() {
       const name = prompt("Enter service token name (e.g., GitLab CI Worker):", "GitLab CI Deployment");
-      if (!name) return;
-      const secret = "kalyx_sec_" + Array.from({length:32}, () => Math.floor(Math.random()*16).toString(16)).join('');
-      prompt("New Personal Access Token generated! Copy now, it won't be shown again:", secret);
-      copyToast("Generated Personal Access Token", "success");
+      if (!name || !name.trim()) return;
+
+      const trimmedName = name.trim();
+      let generatedToken = "";
+      let isLive = false;
+
+      try {
+        const res = await fetch('/api/v1/tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ name: trimmedName, expires_in_days: 90 })
+        });
+
+        if (res.ok || res.status === 201 || res.status === 200) {
+          const data = await res.json();
+          if (data && data.token) {
+            generatedToken = data.token;
+            isLive = true;
+          }
+        }
+      } catch (err) {
+        console.warn("Fetch /api/v1/tokens failed, falling back to offline preview:", err);
+      }
+
+      if (isLive && generatedToken) {
+        prompt("New Personal Access Token generated! Copy now, it won't be shown again:\n\n" + generatedToken, generatedToken);
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(generatedToken);
+        }
+        copyToast("Generated Personal Access Token", "success");
+        const saveActive = confirm("Save this new token as active session token in localStorage for dashboard API requests?");
+        if (saveActive) {
+          localStorage.setItem('kalyx_token', generatedToken);
+          updateSessionTokenUI();
+        }
+        appendTokenRow(trimmedName, generatedToken, new Date().toISOString().split('T')[0]);
+      } else {
+        const fallbackSecret = "kalyx_sec_" + Array.from({length: 32}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        prompt("(Offline mode) Generated local preview token. Copy now, it won't be shown again:\n\n" + fallbackSecret, fallbackSecret);
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(fallbackSecret);
+        }
+        copyToast("Generated Personal Access Token (Offline)", "info");
+        appendTokenRow(trimmedName, fallbackSecret, new Date().toISOString().split('T')[0]);
+      }
+    }
+
+    function appendTokenRow(name, secret, dateStr) {
+      const tbody = document.getElementById("pat-tokens-tbody");
+      if (!tbody) return;
+      const preview = secret.length > 20
+        ? secret.substring(0, 14) + "..." + secret.substring(secret.length - 4)
+        : secret;
+      const row = document.createElement("tr");
+      row.className = "h-10 hover:bg-surface-container transition-colors";
+      row.innerHTML = `
+        <td class="px-3 py-2 font-sans font-medium">${name}</td>
+        <td class="px-3 py-2 text-primary font-mono">${preview}</td>
+        <td class="px-3 py-2 text-outline">${dateStr}</td>
+        <td class="px-3 py-2 text-outline">Just now</td>
+      `;
+      tbody.insertBefore(row, tbody.firstChild);
+    }
+
+    function updateSessionTokenUI() {
+      const token = localStorage.getItem('kalyx_token');
+      const input = document.getElementById("session-pat-input");
+      const badge = document.getElementById("active-token-badge");
+      if (token) {
+        if (input) input.value = token;
+        if (badge) {
+          const preview = token.length > 16 ? token.substring(0, 10) + "..." + token.substring(token.length - 4) : token;
+          badge.className = "font-mono text-xs px-2.5 py-1 rounded bg-tertiary/10 text-tertiary border border-tertiary/30 inline-flex items-center gap-1.5";
+          badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span> Active: ${preview}`;
+        }
+      } else {
+        if (input) input.value = "";
+        if (badge) {
+          badge.className = "font-mono text-xs px-2.5 py-1 rounded bg-surface-container text-outline border border-outline-variant";
+          badge.innerText = "No active token (Anonymous / Dev Mode)";
+        }
+      }
+    }
+
+    function saveSessionToken() {
+      const input = document.getElementById("session-pat-input");
+      const val = input ? input.value.trim() : "";
+      if (!val) {
+        clearSessionToken();
+        return;
+      }
+      localStorage.setItem('kalyx_token', val);
+      updateSessionTokenUI();
+      copyToast("Active session token saved", "success");
+    }
+
+    function clearSessionToken() {
+      localStorage.removeItem('kalyx_token');
+      updateSessionTokenUI();
+      copyToast("Active session token cleared", "info");
+    }
+
+    function toggleTokenVisibility() {
+      const input = document.getElementById("session-pat-input");
+      const btn = document.getElementById("btn-toggle-token");
+      if (!input) return;
+      if (input.type === "password") {
+        input.type = "text";
+        if (btn) btn.innerText = "Hide";
+      } else {
+        input.type = "password";
+        if (btn) btn.innerText = "Show";
+      }
     }
 
     function copyToast(text, label) {
@@ -1155,6 +1418,8 @@
     // Initialize on load
     document.addEventListener("DOMContentLoaded", () => {
       renderCatalogTable();
+      loadLiveCatalog();
+      updateSessionTokenUI();
       // Handle initial URL path if routing to subview
       const p = window.location.pathname;
       if (p.includes('/propose')) {

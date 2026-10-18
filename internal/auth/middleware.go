@@ -46,6 +46,14 @@ func NewMiddleware(store storage.Storage, oidc *OIDCEngine) *Middleware {
 	}
 }
 
+// PATEngine returns the underlying PATEngine instance.
+func (m *Middleware) PATEngine() *PATEngine {
+	if m == nil {
+		return nil
+	}
+	return m.patEngine
+}
+
 // SetBypass programmatically enables or disables auth enforcement.
 func (m *Middleware) SetBypass(bypass bool) {
 	m.bypass = bypass

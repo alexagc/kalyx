@@ -140,10 +140,10 @@ export const api = {
 
       return {
         is_compatible: res.is_compatible ?? res.compatible ?? true,
-        compatibility_type: res.compatibility_type || 'BACKWARD',
-        breaking_changes: res.breaking_changes || [],
-        recommended_bump: res.is_compatible ? 'minor' : 'major',
-        suggested_version: res.is_compatible ? 'v1.3.0' : 'v2.0.0',
+        compatibility_type: res.compatibility_type || res.change_type || 'BACKWARD',
+        breaking_changes: res.reasons || res.breaking_changes || [],
+        recommended_bump: res.is_compatible ? (res.change_type === 'PATCH' ? 'patch' : 'minor') : 'major',
+        suggested_version: res.is_compatible ? (res.change_type === 'PATCH' ? 'v1.2.1' : 'v1.3.0') : 'v2.0.0',
       };
     } catch {
       // Client-side heuristics fallback
@@ -182,5 +182,13 @@ export const api = {
         suggested_version: isCompatible ? 'v1.3.0' : 'v2.0.0',
       };
     }
+  },
+
+  async createToken(name: string, expiresInDays: number = 90): Promise<{ token: string; name: string; expires_at: string }> {
+    return await request<{ token: string; name: string; expires_at: string }>('/api/v1/tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, expires_in_days: expiresInDays }),
+    });
   },
 };

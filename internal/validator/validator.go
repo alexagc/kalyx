@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/mail"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,6 +51,7 @@ func (r *ValidationResult) ToInvalidParams() []httputil.InvalidParam {
 type Validator interface {
 	ValidateCloudEvent(eventJSON []byte, schemaJSON string) (*ValidationResult, error)
 	ValidateData(data any, schemaJSON string) (*ValidationResult, error)
+	ValidateSchema(schemaJSON string) error
 }
 
 // CompiledProperty represents a compiled property in JSON Schema Draft 2020-12.
@@ -176,6 +179,15 @@ func (v *DefaultValidator) ValidateData(data any, schemaJSON string) (*Validatio
 		IsValid: len(errors) == 0,
 		Errors:  errors,
 	}, nil
+}
+
+// ValidateSchema verifies that schemaJSON is syntactically valid JSON Schema Draft 2020-12.
+func (v *DefaultValidator) ValidateSchema(schemaJSON string) error {
+	if strings.TrimSpace(schemaJSON) == "" {
+		return errors.New("schema cannot be empty")
+	}
+	_, err := v.getOrCompileSchema(schemaJSON)
+	return err
 }
 
 func (v *DefaultValidator) getOrCompileSchema(schemaJSON string) (*CompiledSchema, error) {
