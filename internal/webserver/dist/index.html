@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kalyx 🌸 CloudEvents Contract Hub</title>
+  <!-- Google Fonts: Geist, JetBrains Mono, Material Symbols Outlined -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=JetBrains+Mono:wght@100..900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface-dim": "#0f131c",
+            "surface": "#0f131c",
+            "background": "#0f131c",
+            "surface-container-lowest": "#0a0e16",
+            "surface-container-low": "#181c24",
+            "surface-container": "#1c2028",
+            "surface-container-high": "#262a33",
+            "surface-container-highest": "#31353e",
+            "surface-bright": "#353942",
+            "outline-variant": "#3e484f",
+            "outline": "#87929a",
+            "on-surface": "#dfe2ee",
+            "on-surface-variant": "#bdc8d1",
+            "primary": "#8ed5ff",
+            "primary-container": "#38bdf8",
+            "on-primary": "#00354a",
+            "on-primary-container": "#004965",
+            "primary-fixed": "#c4e7ff",
+            "primary-fixed-dim": "#7bd0ff",
+            "tertiary": "#56e5a9",
+            "tertiary-container": "#30c88f",
+            "on-tertiary": "#003824",
+            "on-tertiary-container": "#004e34",
+            "error": "#ffb4ab",
+            "error-container": "#93000a",
+            "secondary": "#ffb0cd",
+            "secondary-container": "#aa0266",
+            "secondary-fixed": "#ffd9e4",
+          },
+          fontFamily: {
+            sans: ["Geist", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"],
+            "body-md": ["Geist", "sans-serif"],
+            "headline-lg": ["Geist", "sans-serif"],
+            "headline-xl": ["Geist", "sans-serif"],
+            "headline-md": ["Geist", "sans-serif"],
+            "label-sm": ["JetBrains Mono", "monospace"],
+            "code-inline": ["JetBrains Mono", "monospace"],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body { background-color: #0f131c; color: #dfe2ee; font-family: 'Geist', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f131c; }
+    ::-webkit-scrollbar-thumb { background: #262a33; border-radius: 3px; }
+    .material-symbols-outlined { font-size: 18px; vertical-align: middle; }
+  </style>
+</head>
+<body class="bg-surface font-body-md text-on-surface antialiased select-text">
+  <!-- SIDEBAR NAVIGATION -->
+  <aside class="fixed left-0 top-0 h-screen w-60 bg-surface-container-lowest border-r border-outline-variant z-50 flex flex-col justify-between select-none">
+    <div class="flex flex-col">
+      <!-- Brand Header -->
+      <div class="h-14 px-3 flex items-center justify-between border-b border-outline-variant">
+        <div class="flex items-center gap-2 cursor-pointer" onclick="navigate('catalog')">
+          <span class="text-2xl">🌸</span>
+          <span class="font-headline-md text-headline-md text-on-surface font-semibold tracking-tight">Kalyx</span>
+        </div>
+        <span class="px-1.5 py-0.5 rounded bg-surface-container-high border border-outline-variant text-on-surface-variant font-mono text-[11px]">v1.0</span>
+      </div>
+
+      <!-- SQLite WAL Engine Status Badge -->
+      <div class="px-3 py-2 border-b border-outline-variant/60 bg-surface-container-lowest">
+        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-low border border-outline-variant/50 w-full">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-tertiary opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary-container"></span>
+          </span>
+          <span class="font-mono text-xs text-on-surface font-medium truncate">SQLite WAL Active</span>
+        </div>
+      </div>
+
+      <!-- Navigation Links -->
+      <div class="px-1 py-2">
+        <div class="px-2 py-1 font-mono text-[11px] text-outline uppercase tracking-wider">Registry Engine</div>
+        <nav class="flex flex-col gap-0.5 mt-1" id="nav-links">
+          <button onclick="navigate('catalog')" id="nav-catalog" class="flex items-center justify-between px-2.5 py-2 rounded-r transition-colors bg-surface-container-high text-primary border-l-2 border-primary-container font-medium w-full text-left">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined">schema</span>
+              <span>Event Contracts</span>
+            </div>
+          </button>
+          <button onclick="navigate('reviews')" id="nav-reviews" class="flex items-center justify-between px-2.5 py-2 rounded-r transition-colors text-on-surface-variant hover:bg-surface-container hover:text-on-surface w-full text-left">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined">verified_user</span>
+              <span>Governance &amp; Reviews</span>
+            </div>
+            <span class="px-1.5 py-0.2 rounded bg-secondary-container/20 border border-secondary/30 text-secondary font-mono text-[10px]">2 pending</span>
+          </button>
+          <button onclick="navigate('export')" id="nav-export" class="flex items-center justify-between px-2.5 py-2 rounded-r transition-colors text-on-surface-variant hover:bg-surface-container hover:text-on-surface w-full text-left">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined">sync_alt</span>
+              <span>Export &amp; DDL Center</span>
+            </div>
+          </button>
+          <button onclick="navigate('settings')" id="nav-settings" class="flex items-center justify-between px-2.5 py-2 rounded-r transition-colors text-on-surface-variant hover:bg-surface-container hover:text-on-surface w-full text-left">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined">key</span>
+              <span>Access Tokens &amp; Settings</span>
+            </div>
+          </button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- User Footer Profile Card -->
+    <div class="p-2 border-t border-outline-variant bg-surface-container-lowest">
+      <div class="p-2 rounded bg-surface-container-low border border-outline-variant flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-8 h-8 rounded-full bg-primary flex-shrink-0 flex items-center justify-center text-on-primary font-bold text-xs">AR</div>
+          <div class="min-w-0 flex flex-col">
+            <span class="text-xs text-on-surface font-medium truncate leading-tight">Alex Rivera</span>
+            <span class="font-mono text-[10px] text-outline truncate leading-tight">alex@company.com</span>
+            <span class="mt-0.5 inline-block font-mono text-[9px] text-primary-fixed-dim bg-surface-container px-1 rounded border border-outline-variant/60 w-fit">Checkout Core</span>
+          </div>
+        </div>
+        <button onclick="navigate('settings')" class="p-1 text-on-surface-variant hover:text-on-surface rounded hover:bg-surface-container" title="Session Settings">
+          <span class="material-symbols-outlined text-[16px]">more_vert</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- TOP HEADER & MAIN CONTAINER -->
+  <div class="pl-60 min-h-screen flex flex-col bg-surface">
+    <!-- Header -->
+    <header class="fixed top-0 left-60 right-0 h-14 bg-surface-container-lowest/95 backdrop-blur-md border-b border-outline-variant z-40 px-6 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="cursor-pointer text-xl" onclick="navigate('catalog')">🌸</span>
+        <span class="text-outline cursor-pointer hover:text-on-surface" onclick="navigate('catalog')">Kalyx</span>
+        <span class="text-outline-variant">/</span>
+        <span id="breadcrumb-title" class="text-on-surface font-medium">Contracts Catalog</span>
+      </div>
+
+      <div class="flex-1 max-w-lg mx-4">
+        <div class="relative flex items-center w-full">
+          <span class="material-symbols-outlined absolute left-2.5 text-outline text-[16px]">search</span>
+          <input id="globalSearchInput" onkeyup="handleGlobalSearch(event)" class="w-full h-8 pl-8 pr-12 rounded bg-surface-container-low border border-outline-variant text-on-surface placeholder:text-outline text-xs focus:outline-none focus:border-primary" placeholder="Search contracts, schemas, fields, CE types..." type="text"/>
+          <div class="absolute right-2 flex items-center gap-0.5 pointer-events-none">
+            <kbd class="px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant font-mono text-[10px] text-on-surface-variant">⌘K</kbd>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <a class="flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" href="https://github.com/alexagc/kalyx" target="_blank">
+          <span class="material-symbols-outlined text-[16px]">terminal</span>
+          <span>CLI Docs</span>
+          <span class="material-symbols-outlined text-[12px]">north_east</span>
+        </a>
+        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container border border-outline-variant">
+          <span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+          <span class="font-mono text-xs text-on-surface-variant">4ms ping</span>
+        </div>
+        <button onclick="navigate('propose')" class="h-8 px-3 rounded bg-tertiary-container text-on-tertiary hover:bg-tertiary text-xs font-semibold inline-flex items-center gap-1.5 shadow-sm transition-colors">
+          <span class="material-symbols-outlined text-[16px]">add</span>
+          <span>Propose Event</span>
+        </button>
+        <button onclick="navigate('settings')" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary font-bold text-xs" title="Alex Rivera">AR</button>
+      </div>
+    </header>
+
+    <!-- MAIN VIEWS -->
+    <main class="w-full pt-14 bg-surface min-h-[calc(100vh-3.5rem)]">
+      <!-- 1. CATALOG PAGE -->
+      <div id="view-catalog" class="view-panel flex flex-col w-full">
+        <div class="px-6 py-4 flex flex-col gap-6 max-w-[1720px] mx-auto w-full">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex flex-col gap-0.5">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-xs text-primary uppercase tracking-wider">Registry Engine</span>
+                <span class="text-outline-variant font-mono text-xs">/</span>
+                <span class="font-mono text-xs text-on-surface-variant">Production Namespace: prod-east-aws</span>
+              </div>
+              <h1 class="text-xl text-on-surface font-semibold tracking-tight">Event Contracts Catalog</h1>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container-low border border-outline-variant/40">
+                <span class="material-symbols-outlined text-tertiary text-[15px]">check_circle</span>
+                <span class="font-mono text-xs text-tertiary">Schema Lint: 0 Errors</span>
+              </div>
+              <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container-high border border-outline-variant/60">
+                <span class="font-mono text-xs text-outline">Fingerprint:</span>
+                <span class="font-mono text-xs text-primary">sha256:7f49a2c</span>
+              </div>
+              <button onclick="navigate('reviews')" class="h-8 px-3 rounded bg-surface-container-high hover:bg-surface-bright text-on-surface text-xs inline-flex items-center gap-1.5 border border-outline-variant/60">
+                <span class="material-symbols-outlined text-[15px]">history</span>
+                <span>Schema Changelog</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI Mini Ribbon -->
+          <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="p-4 rounded bg-surface-container-low border border-outline-variant/40 flex flex-col justify-between">
+              <div class="flex items-start justify-between">
+                <div>
+                  <span class="font-mono text-xs text-outline uppercase tracking-wider">Active Contracts</span>
+                  <div class="flex items-baseline gap-2 mt-1">
+                    <span class="text-3xl text-on-surface font-bold">48</span>
+                    <span class="px-1.5 py-0.5 rounded bg-tertiary/10 text-tertiary font-mono text-xs font-semibold">+3 this wk</span>
+                  </div>
+                </div>
+                <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary">
+                  <span class="material-symbols-outlined text-[18px]">data_object</span>
+                </div>
+              </div>
+              <div class="mt-4 flex items-center justify-between text-xs text-on-surface-variant font-mono">
+                <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span> 100% backward compatible</span>
+                <span class="text-tertiary">0 regressions</span>
+              </div>
+            </div>
+
+            <div class="p-4 rounded bg-surface-container-low border border-outline-variant/40 flex flex-col justify-between">
+              <div class="flex items-start justify-between">
+                <div>
+                  <span class="font-mono text-xs text-outline uppercase tracking-wider">Pending Approvals</span>
+                  <div class="flex items-baseline gap-2 mt-1">
+                    <span class="text-3xl text-secondary font-bold">2</span>
+                    <span class="font-mono text-xs text-secondary font-medium">Proposals</span>
+                  </div>
+                </div>
+                <div class="w-8 h-8 rounded bg-secondary-container/20 flex items-center justify-center text-secondary">
+                  <span class="material-symbols-outlined text-[18px]">pending_actions</span>
+                </div>
+              </div>
+              <div class="mt-4 flex items-center justify-between text-xs font-mono">
+                <span class="flex items-center gap-1 text-on-surface-variant"><span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span> Awaiting Lead Review</span>
+                <button onclick="navigate('reviews')" class="text-primary hover:underline">Review Queue &rarr;</button>
+              </div>
+            </div>
+
+            <div class="p-4 rounded bg-surface-container-low border border-outline-variant/40 flex flex-col justify-between">
+              <div class="flex items-start justify-between">
+                <div>
+                  <span class="font-mono text-xs text-outline uppercase tracking-wider">Data Lake Tables Synced</span>
+                  <div class="flex items-baseline gap-2 mt-1">
+                    <span class="text-3xl text-on-surface font-bold">48</span>
+                    <span class="font-mono text-xs text-primary font-medium">Iceberg &amp; Delta</span>
+                  </div>
+                </div>
+                <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary-container">
+                  <span class="material-symbols-outlined text-[18px]">table_chart_view</span>
+                </div>
+              </div>
+              <div class="mt-4 flex items-center justify-between text-xs text-on-surface-variant font-mono">
+                <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px] text-primary">sync</span> Sub-second CDC sync active</span>
+                <span class="text-tertiary">0 lag</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Filter Bar -->
+          <section class="p-3 rounded bg-surface-container-low border border-outline-variant/50 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+            <div class="flex items-center gap-1 overflow-x-auto pb-1 lg:pb-0 font-mono text-xs" id="domain-filters">
+              <button onclick="filterDomain('ALL')" class="domain-btn active px-3 py-1 rounded bg-surface-container-high text-primary border border-outline-variant/80 font-semibold">All Domains (48)</button>
+              <button onclick="filterDomain('Orders')" class="domain-btn px-3 py-1 rounded hover:bg-surface-container text-on-surface-variant">Orders (14)</button>
+              <button onclick="filterDomain('Payments')" class="domain-btn px-3 py-1 rounded hover:bg-surface-container text-on-surface-variant">Payments (11)</button>
+              <button onclick="filterDomain('Inventory')" class="domain-btn px-3 py-1 rounded hover:bg-surface-container text-on-surface-variant">Inventory (9)</button>
+              <button onclick="filterDomain('Users')" class="domain-btn px-3 py-1 rounded hover:bg-surface-container text-on-surface-variant">Users (14)</button>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <label class="h-8 px-2.5 rounded bg-surface-container-lowest border border-outline-variant/60 flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" id="piiFilterToggle" onchange="togglePiiFilter()" class="sr-only" />
+                <span class="material-symbols-outlined text-[14px] text-secondary">shield</span>
+                <span class="font-mono text-xs text-on-surface-variant">PII Only</span>
+                <div class="w-6 h-3 bg-surface-container-highest rounded-full p-0.5 relative transition-colors" id="piiIndicator"><div class="w-2 h-2 bg-on-surface rounded-full transition-transform" id="piiDot"></div></div>
+              </label>
+            </div>
+          </section>
+
+          <!-- Contracts Table -->
+          <section class="rounded bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm">
+            <div class="overflow-x-auto w-full">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="h-9 bg-surface-container-low text-outline font-mono uppercase tracking-wider border-b border-outline-variant/60">
+                    <th class="px-4 py-1 w-52">Event Name</th>
+                    <th class="px-4 py-1">CloudEvent Type (Spec 1.0)</th>
+                    <th class="px-3 py-1 w-28">Domain</th>
+                    <th class="px-4 py-1 w-40">Active SemVer</th>
+                    <th class="px-4 py-1">Data Lake Bridge</th>
+                    <th class="px-4 py-1 w-36">PII Risk</th>
+                    <th class="px-4 py-1 text-right w-44">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-outline-variant/30 text-on-surface" id="catalog-table-body">
+                  <!-- Injected via JavaScript -->
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- 2. CONTRACT DETAIL & WORKBENCH -->
+      <div id="view-workbench" class="view-panel hidden flex-col w-full pb-16">
+        <!-- Workbench Sub-Header Bar -->
+        <section class="sticky top-14 z-30 w-full bg-surface-container-lowest/95 backdrop-blur-md px-6 py-3 border-b border-outline-variant/40 flex flex-col gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-on-surface-variant">
+            <div class="flex items-center gap-2">
+              <button onclick="navigate('catalog')" class="hover:text-primary flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px] text-outline">account_tree</span>
+                <span>Contracts</span>
+              </button>
+              <span class="text-outline-variant">/</span>
+              <span class="px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-medium" id="wb-domain">Orders</span>
+              <span class="text-outline-variant">/</span>
+              <span class="text-primary font-semibold" id="wb-event-name">OrderCompleted</span>
+              <span class="px-1.5 py-0.5 rounded bg-surface-container-high border border-outline-variant text-outline text-[10px]">Producer: checkout-svc</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-outline">fingerprint</span>
+              <span class="text-outline">sha256:</span>
+              <span class="text-primary">7f49a2c94...8e</span>
+              <div class="px-2 py-0.5 rounded bg-tertiary/10 border border-tertiary/30 text-tertiary font-mono text-[10px]">CloudEvents 1.0 Spec</div>
+            </div>
+          </div>
+
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div class="flex items-center gap-3 flex-wrap">
+              <h1 class="text-xl text-on-surface font-semibold tracking-tight flex items-center gap-2">
+                OrderCompleted <span class="px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant font-mono text-xs text-outline" id="wb-version-badge">v1.2.0</span>
+              </h1>
+              <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container-low border border-outline-variant font-mono text-xs text-primary">
+                <span class="material-symbols-outlined text-[14px]">tag</span>
+                <span>orders.order.completed.v1</span>
+                <button onclick="copyToast('orders.order.completed.v1', 'CloudEvent Type')" class="text-outline hover:text-on-surface"><span class="material-symbols-outlined text-[13px]">content_copy</span></button>
+              </div>
+
+              <!-- Version Switcher Dropdown -->
+              <div class="relative">
+                <select id="versionSelector" onchange="handleVersionChange(this.value)" class="h-8 px-2.5 rounded bg-surface-container border border-outline-variant text-on-surface font-mono text-xs focus:outline-none cursor-pointer">
+                  <option value="1.2.0">v1.2.0 (Approved - Current)</option>
+                  <option value="1.1.0">v1.1.0 (Superseded)</option>
+                  <option value="1.0.0">v1.0.0 (Deprecated)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button onclick="switchWbTab('bridge')" class="h-8 px-2.5 rounded bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface text-xs inline-flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px]">download</span> Export DDL
+              </button>
+              <button onclick="navigate('propose')" class="h-8 px-3 rounded bg-primary-container text-on-primary text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-primary transition-colors shadow-sm">
+                <span class="material-symbols-outlined text-[16px]">fork_right</span> Propose Schema Change
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Deprecation Alert Banner (Shown on v1.0.0) -->
+        <div id="wb-deprecation-banner" class="hidden px-6 pt-3">
+          <div class="rounded bg-surface-container-low border border-amber-900/60 p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-inner">
+            <div class="flex items-start gap-2 text-xs">
+              <span class="material-symbols-outlined text-amber-400 text-[18px]">warning</span>
+              <div class="text-on-surface-variant">
+                <strong class="text-amber-300">RFC 8594 Deprecation Notice:</strong> Contract version v1.0.0 sunsets on <time class="text-amber-200 font-mono">2026-12-31</time>. Successor: <button onclick="handleVersionChange('1.2.0')" class="text-primary underline font-semibold">v1.2.0 Approved</button>. Please migrate all producers.
+              </div>
+            </div>
+            <span class="px-2 py-0.5 rounded bg-error-container/20 border border-error/30 text-error font-mono text-[10px]">RFC 8594 Sunset Active</span>
+          </div>
+        </div>
+
+        <!-- Workbench Tabs -->
+        <div class="px-6 py-4 flex flex-col gap-4">
+          <div class="border-b border-outline-variant flex items-center gap-2 overflow-x-auto font-medium text-xs">
+            <button onclick="switchWbTab('fields')" id="wb-tab-fields" class="wb-tab active px-3 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5">
+              <span class="material-symbols-outlined">table_chart</span> Properties &amp; Fields Table (7)
+            </button>
+            <button onclick="switchWbTab('schema')" id="wb-tab-schema" class="wb-tab px-3 py-2.5 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface flex items-center gap-1.5">
+              <span class="material-symbols-outlined">data_object</span> Raw JSON Schema (Draft 2020-12)
+            </button>
+            <button onclick="switchWbTab('bridge')" id="wb-tab-bridge" class="wb-tab px-3 py-2.5 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface flex items-center gap-1.5">
+              <span class="material-symbols-outlined">hub</span> Data Lake Bridge (Iceberg / Delta)
+            </button>
+            <button onclick="switchWbTab('evolution')" id="wb-tab-evolution" class="wb-tab px-3 py-2.5 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface flex items-center gap-1.5">
+              <span class="material-symbols-outlined">timeline</span> SemVer Evolution Timeline
+            </button>
+          </div>
+
+          <!-- Tab 1: Fields Table -->
+          <div id="wb-panel-fields" class="wb-panel flex flex-col gap-3">
+            <div class="overflow-x-auto rounded border border-outline-variant bg-surface-container-low shadow-sm">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="h-8 bg-surface-container border-b border-outline-variant font-mono text-outline uppercase tracking-wider">
+                    <th class="py-1 px-3 w-64">Field Path &amp; Name</th>
+                    <th class="py-1 px-3 w-28">Type</th>
+                    <th class="py-1 px-3 w-36">Constraints</th>
+                    <th class="py-1 px-3 w-48">PII &amp; Security</th>
+                    <th class="py-1 px-3 w-56">Data Lake Column (Iceberg)</th>
+                    <th class="py-1 px-3 w-44">Partition / Key</th>
+                    <th class="py-1 px-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-outline-variant/40 text-on-surface">
+                  <tr class="h-10 hover:bg-surface-container">
+                    <td class="px-3 py-1.5 font-mono text-primary font-medium">id <span class="px-1 rounded bg-surface-container-high text-[10px] text-outline">CE</span></td>
+                    <td class="px-3 py-1.5 font-mono">string&lt;uuid&gt;</td>
+                    <td class="px-3 py-1.5"><span class="px-1.5 py-0.2 rounded bg-error-container/20 text-error font-mono text-[10px] font-semibold">REQUIRED</span></td>
+                    <td class="px-3 py-1.5 text-outline">None / System</td>
+                    <td class="px-3 py-1.5 font-mono text-on-surface-variant bg-surface-container-lowest">event_id STRING NOT NULL</td>
+                    <td class="px-3 py-1.5 font-mono text-primary">Dedup Key</td>
+                    <td class="px-3 py-1.5 text-on-surface-variant">Canonical CloudEvent UUID identifier.</td>
+                  </tr>
+                  <tr class="h-10 hover:bg-surface-container">
+                    <td class="px-3 py-1.5 font-mono font-semibold pl-4">↳ data.order_id</td>
+                    <td class="px-3 py-1.5 font-mono">string</td>
+                    <td class="px-3 py-1.5"><span class="px-1.5 py-0.2 rounded bg-error-container/20 text-error font-mono text-[10px] font-semibold">REQUIRED</span></td>
+                    <td class="px-3 py-1.5 text-outline">None / Public</td>
+                    <td class="px-3 py-1.5 font-mono text-on-surface-variant bg-surface-container-lowest">order_id STRING NOT NULL</td>
+                    <td class="px-3 py-1.5 font-mono text-primary">bucket(16, order_id)</td>
+                    <td class="px-3 py-1.5 text-on-surface-variant">Primary transaction reference. Partitioned across Kafka &amp; Iceberg.</td>
+                  </tr>
+                  <tr class="h-10 bg-secondary-container/10 hover:bg-secondary-container/20">
+                    <td class="px-3 py-1.5 font-mono font-semibold text-secondary pl-4">↳ data.customer_email <span class="w-1.5 h-1.5 rounded-full bg-secondary inline-block animate-pulse"></span></td>
+                    <td class="px-3 py-1.5 font-mono text-secondary">string&lt;email&gt;</td>
+                    <td class="px-3 py-1.5"><span class="px-1.5 py-0.2 rounded bg-error-container/20 text-error font-mono text-[10px] font-semibold">REQUIRED</span></td>
+                    <td class="px-3 py-1.5"><span class="px-1.5 py-0.5 rounded bg-secondary-container/30 text-secondary border border-secondary/40 font-mono text-[10px]">Confidential PII (AES-256)</span></td>
+                    <td class="px-3 py-1.5 font-mono text-secondary bg-surface-container-lowest">customer_email STRING MASKED</td>
+                    <td class="px-3 py-1.5 text-outline">—</td>
+                    <td class="px-3 py-1.5 text-on-surface-variant">Direct communication email. Masked in BI and analytics queries.</td>
+                  </tr>
+                  <tr class="h-10 hover:bg-surface-container">
+                    <td class="px-3 py-1.5 font-mono pl-4">↳ data.amount_cents</td>
+                    <td class="px-3 py-1.5 font-mono">integer</td>
+                    <td class="px-3 py-1.5 font-mono text-[10px] text-outline">minimum: 0</td>
+                    <td class="px-3 py-1.5 text-outline">Financial</td>
+                    <td class="px-3 py-1.5 font-mono text-on-surface-variant bg-surface-container-lowest">amount_cents BIGINT NOT NULL</td>
+                    <td class="px-3 py-1.5 text-outline">—</td>
+                    <td class="px-3 py-1.5 text-on-surface-variant">Gross completed transaction amount in cents.</td>
+                  </tr>
+                  <tr class="h-10 hover:bg-surface-container">
+                    <td class="px-3 py-1.5 font-mono pl-4">↳ data.currency</td>
+                    <td class="px-3 py-1.5 font-mono">string&lt;enum&gt;</td>
+                    <td class="px-3 py-1.5 font-mono text-[10px] text-outline">USD, EUR, GBP</td>
+                    <td class="px-3 py-1.5 text-outline">Public</td>
+                    <td class="px-3 py-1.5 font-mono text-on-surface-variant bg-surface-container-lowest">currency VARCHAR(3) NOT NULL</td>
+                    <td class="px-3 py-1.5 text-outline">—</td>
+                    <td class="px-3 py-1.5 text-on-surface-variant">ISO-4217 standard currency code.</td>
+                  </tr>
+                  <tr class="h-10 hover:bg-surface-container">
+                    <td class="px-3 py-1.5 font-mono pl-4">↳ data.completed_at</td>
+                    <td class="px-3 py-1.5 font-mono">string&lt;date-time&gt;</td>
+                    <td class="px-3 py-1.5"><span class="px-1.5 py-0.2 rounded bg-error-container/20 text-error font-mono text-[10px] font-semibold">REQUIRED</span></td>
+                    <td class="px-3 py-1.5 text-outline">Public</td>
+                    <td class="px-3 py-1.5 font-mono text-on-surface-variant bg-surface-container-lowest">completed_at TIMESTAMP NOT NULL</td>
+                    <td class="px-3 py-1.5 font-mono text-primary">days(completed_at)</td>
+                    <td class="px-3 py-1.5 text-on-surface-variant">ISO-8601 UTC timestamp of payment settlement.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tab 2: Raw JSON Schema -->
+          <div id="wb-panel-schema" class="wb-panel hidden flex-col gap-3">
+            <div class="rounded border border-outline-variant bg-[#0a0e16] p-4 font-mono text-xs text-[#dfe2ee] overflow-x-auto shadow-inner">
+              <div class="flex justify-between items-center mb-2 pb-2 border-b border-outline-variant/40">
+                <span class="text-primary font-bold">OrderCompleted.schema.json (Draft 2020-12)</span>
+                <button onclick="copyToast(document.getElementById('raw-schema-code').innerText, 'JSON Schema')" class="px-2.5 py-1 rounded bg-surface-container text-xs hover:bg-surface-container-high border border-outline-variant">Copy Schema</button>
+              </div>
+              <pre id="raw-schema-code">{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "$id": "https://schema.kalyx.io/events/ev_orders_completed/v1.2.0.json",\n  "title": "OrderCompleted",\n  "type": "object",\n  "properties": {\n    "order_id": { "type": "string", "format": "uuid" },\n    "customer_id": { "type": "string", "format": "uuid" },\n    "customer_email": { "type": "string", "format": "email" },\n    "amount_cents": { "type": "integer", "minimum": 0 },\n    "currency": { "type": "string", "enum": ["USD", "EUR", "GBP"] },\n    "completed_at": { "type": "string", "format": "date-time" }\n  },\n  "required": ["order_id", "customer_id", "customer_email", "amount_cents", "currency", "completed_at"],\n  "additionalProperties": false\n}</pre>
+            </div>
+          </div>
+
+          <!-- Tab 3: Data Lake Bridge DDL -->
+          <div id="wb-panel-bridge" class="wb-panel hidden flex-col gap-3">
+            <div class="p-3 rounded bg-surface-container-low border border-outline-variant flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <button onclick="setBridgeFormat('iceberg')" id="ddl-fmt-iceberg" class="px-3 py-1 rounded bg-primary-container text-on-primary font-mono text-xs font-semibold">Apache Iceberg</button>
+                <button onclick="setBridgeFormat('delta')" id="ddl-fmt-delta" class="px-3 py-1 rounded bg-surface-container text-on-surface-variant font-mono text-xs hover:text-on-surface">Delta Lake 3.0</button>
+              </div>
+              <button onclick="copyToast(document.getElementById('bridge-ddl-code').innerText, 'DDL SQL')" class="px-3 py-1 rounded bg-surface-container text-xs hover:bg-surface-container-high border border-outline-variant flex items-center gap-1">
+                <span class="material-symbols-outlined text-[14px]">content_copy</span> Copy SQL DDL
+              </button>
+            </div>
+            <div class="rounded border border-outline-variant bg-[#0a0e16] p-4 font-mono text-xs text-[#dfe2ee] overflow-x-auto shadow-inner">
+              <pre id="bridge-ddl-code">CREATE TABLE IF NOT EXISTS prod_lake.orders.lake_orders_completed (\n    event_id STRING NOT NULL,\n    order_id STRING NOT NULL,\n    customer_id STRING NOT NULL,\n    customer_email STRING,\n    amount_cents BIGINT NOT NULL,\n    currency VARCHAR(3) NOT NULL,\n    completed_at TIMESTAMP NOT NULL\n)\nUSING iceberg\nPARTITIONED BY (days(completed_at), bucket(16, order_id));</pre>
+            </div>
+          </div>
+
+          <!-- Tab 4: SemVer Evolution Timeline -->
+          <div id="wb-panel-evolution" class="wb-panel hidden flex-col gap-3">
+            <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col gap-4">
+              <div class="border-l-2 border-outline-variant/60 pl-4 ml-2 flex flex-col gap-5">
+                <div class="relative flex flex-col gap-1">
+                  <span class="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-tertiary"></span>
+                  <div class="flex items-center gap-2 font-mono text-xs">
+                    <strong class="text-primary text-sm">v1.2.0</strong>
+                    <span class="px-1.5 py-0.2 rounded bg-tertiary/10 text-tertiary">APPROVED</span>
+                    <span class="text-outline">2025-05-18</span>
+                  </div>
+                  <p class="text-xs text-on-surface">Added strict currency enum and completed_at date-time validator.</p>
+                  <span class="text-[11px] text-outline font-mono">Author: Alex Rivera • Approver: <strong class="text-tertiary">Sarah Chen</strong> (Lead Platform Architect)</span>
+                </div>
+                <div class="relative flex flex-col gap-1">
+                  <span class="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-outline"></span>
+                  <div class="flex items-center gap-2 font-mono text-xs">
+                    <strong class="text-on-surface text-sm">v1.1.0</strong>
+                    <span class="px-1.5 py-0.2 rounded bg-surface-container text-outline">SUPERSEDED</span>
+                    <span class="text-outline">2025-02-10</span>
+                  </div>
+                  <p class="text-xs text-on-surface">Added customer_email field with PII classification tag.</p>
+                  <span class="text-[11px] text-outline font-mono">Author: Alex Rivera • Approver: Marcus Vance (Data Steward)</span>
+                </div>
+                <div class="relative flex flex-col gap-1">
+                  <span class="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-error"></span>
+                  <div class="flex items-center gap-2 font-mono text-xs">
+                    <strong class="text-error text-sm">v1.0.0</strong>
+                    <span class="px-1.5 py-0.2 rounded bg-error-container/20 text-error">DEPRECATED</span>
+                    <span class="text-outline">2024-11-04</span>
+                  </div>
+                  <p class="text-xs text-on-surface">Initial contract specification RFC 001. Sunsetting 2026-12-31.</p>
+                  <span class="text-[11px] text-outline font-mono">Author: Alex Rivera • Approver: Sarah Chen</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. PROPOSAL EDITOR & SEMVER DIFF -->
+      <div id="view-propose" class="view-panel hidden flex-col w-full pb-16">
+        <section class="w-full bg-surface-container-lowest px-6 py-4 border-b border-outline-variant/40">
+          <div class="flex flex-col gap-2 max-w-[1720px] mx-auto">
+            <div class="flex items-center justify-between flex-wrap gap-2 text-xs font-mono">
+              <div class="flex items-center gap-1.5">
+                <button onclick="navigate('catalog')" class="text-outline hover:text-on-surface">Kalyx</button>
+                <span class="text-outline-variant">/</span>
+                <span class="text-primary">OrderCompleted</span>
+                <span class="text-outline-variant">/</span>
+                <span class="px-1.5 py-0.5 rounded bg-surface-container text-primary-fixed-dim">#PR-104 (Draft)</span>
+              </div>
+              <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-surface-container-low border border-tertiary/40">
+                <span class="w-2 h-2 rounded-full bg-tertiary animate-ping"></span>
+                <span class="text-tertiary font-semibold uppercase">Schema Lint</span>
+                <span class="text-outline-variant">|</span>
+                <span class="text-on-surface">Valid JSONSchema Draft 2020-12</span>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-4 mt-1">
+              <div>
+                <h1 class="text-xl text-on-surface font-semibold flex items-center gap-2">
+                  <span>Propose Schema Update:</span>
+                  <span class="text-primary font-mono text-lg">OrderCompleted</span>
+                </h1>
+                <p class="text-xs text-outline font-mono mt-1">proposal/add-notes-field ➔ target: main (v1.2.0)</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="revertDraft()" class="h-8 px-3 rounded bg-surface-container hover:bg-surface-container-high border border-outline-variant text-xs flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[15px]">undo</span> Revert
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Split Monaco Diff Layout -->
+        <div class="px-6 py-4 flex flex-col gap-6 max-w-[1720px] mx-auto w-full">
+          <div class="rounded border border-outline-variant bg-surface-container-lowest overflow-hidden shadow-xl">
+            <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-outline-variant bg-surface-container-low px-4 py-2 text-xs font-mono">
+              <div class="flex justify-between items-center text-outline">
+                <span>OrderCompleted.schema.json (v1.2.0 Active Approved)</span>
+                <span class="text-[10px] uppercase font-bold">Read Only</span>
+              </div>
+              <div class="flex justify-between items-center text-on-surface pl-2">
+                <span class="text-tertiary font-semibold">OrderCompleted.draft.json (v1.3.0 Draft Buffer)</span>
+                <span class="text-primary text-[10px]">JSONSchema 2020-12</span>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-outline-variant bg-[#0a0e16] text-[#dfe2ee] font-mono text-xs">
+              <div class="p-3 bg-[#070a0f] overflow-x-auto whitespace-pre">
+                <pre id="diff-left-base">{\n  "title": "OrderCompleted",\n  "properties": {\n    "order_id": { "type": "string" },\n    "customer_id": { "type": "string" },\n    "customer_email": { "type": "string" },\n    "amount_cents": { "type": "integer" },\n    "currency": { "type": "string" },\n    "completed_at": { "type": "string" }\n  },\n  "required": ["order_id", "customer_id", "customer_email", "amount_cents", "currency", "completed_at"]\n}</pre>
+              </div>
+              <div class="p-2 bg-[#0b0f17]">
+                <textarea id="diff-right-draft" oninput="handleDraftInput(this.value)" rows="16" class="w-full bg-transparent text-[#dfe2ee] font-mono text-xs focus:outline-none resize-none leading-relaxed">{\n  "title": "OrderCompleted",\n  "properties": {\n    "order_id": { "type": "string" },\n    "customer_id": { "type": "string" },\n    "customer_email": { "type": "string" },\n    "loyalty_tier": { "type": "string", "enum": ["bronze", "silver", "gold"] },\n    "notes": { "type": "string", "maxLength": 500 },\n    "amount_cents": { "type": "integer" },\n    "currency": { "type": "string" },\n    "completed_at": { "type": "string" }\n  },\n  "required": ["order_id", "customer_id", "customer_email", "amount_cents", "currency", "completed_at"]\n}</textarea>
+              </div>
+            </div>
+            <div class="px-4 py-1.5 bg-surface-container border-t border-outline-variant text-xs font-mono text-outline flex justify-between items-center">
+              <span id="diff-stat-text" class="text-tertiary font-semibold">+10 lines added • 0 deletions • 2 fields introduced</span>
+              <span>Schema Validation: <span class="text-tertiary">PASSED</span></span>
+            </div>
+          </div>
+
+          <!-- Real-Time SemVer Diagnostic Banner -->
+          <div class="flex flex-col gap-2">
+            <div class="flex justify-between items-center">
+              <h2 class="text-base text-on-surface font-semibold flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-tertiary">verified</span> Automated SemVer Compatibility Engine
+              </h2>
+              <div class="flex items-center gap-2 bg-surface-container-low px-2 py-1 rounded border border-outline-variant text-xs font-mono">
+                <span class="text-outline">Simulate:</span>
+                <button onclick="simulateScenario(false)" class="px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary font-semibold" id="sim-safe-btn">Safe Add (v1.3.0)</button>
+                <button onclick="simulateScenario(true)" class="px-2 py-0.5 rounded text-outline hover:text-on-surface font-semibold" id="sim-breaking-btn">Breaking Delete (v2.0.0)</button>
+              </div>
+            </div>
+
+            <div id="semver-diagnostic-card" class="p-4 rounded border border-tertiary/40 bg-gradient-to-r from-surface-container-low via-surface-container-low to-tertiary-container/5 shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div class="flex items-start gap-3">
+                <div id="diag-icon-box" class="w-10 h-10 rounded bg-tertiary-container/20 border border-tertiary/40 flex items-center justify-center text-tertiary">
+                  <span class="material-symbols-outlined text-[24px]">published_with_changes</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <div class="flex items-center gap-2 flex-wrap font-mono text-xs">
+                    <span id="diag-badge" class="px-2 py-0.5 rounded bg-tertiary-container/20 border border-tertiary/40 text-tertiary font-bold">MINOR COMPATIBLE CHANGE DETECTED</span>
+                    <span class="text-outline" id="diag-rule">RULE: ADD_OPTIONAL_FIELD</span>
+                    <span class="text-on-surface font-semibold">Recommended: <span id="diag-target-ver" class="text-primary">v1.3.0</span></span>
+                  </div>
+                  <p id="diag-desc" class="text-xs text-on-surface">Added optional properties loyalty_tier and notes without altering existing required constraints.</p>
+                  <p id="diag-lake" class="text-[11px] text-outline">Data Lake Bridge Impact: Fully backward compatible with Apache Iceberg Schema Evolution.</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="font-mono text-xs text-outline">Governance Gate</span>
+                <div id="diag-gate" class="text-xs font-bold text-tertiary font-mono">Ready for Review</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Submission Form -->
+          <form onsubmit="handleProposalSubmit(event)" class="p-5 rounded border border-outline-variant bg-surface-container-lowest flex flex-col gap-4">
+            <h3 class="text-sm font-semibold text-on-surface flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary">assignment_turned_in</span> Proposal Submission &amp; Governance Review
+            </h3>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-mono text-outline uppercase tracking-wider">Engineering Change Justification *</label>
+              <textarea rows="3" required class="w-full p-3 bg-[#0a0e16] border border-outline-variant rounded text-xs text-on-surface focus:outline-none focus:border-primary">Adding optional loyalty_tier and fulfillment notes to support the Q3 Global Loyalty Program rollout in the checkout-worker microservice.</textarea>
+            </div>
+            <div class="flex flex-col gap-2 text-xs">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked required class="rounded text-primary" />
+                <span>Verified Apache Iceberg (v1.4+) and Delta Lake 3.0 auto-evolution compatibility without table schema collision.</span>
+              </label>
+            </div>
+            <div class="flex justify-end gap-3 pt-2 border-t border-outline-variant">
+              <button type="button" onclick="navigate('catalog')" class="px-3 py-1.5 rounded bg-surface-container text-xs text-outline hover:text-on-surface">Cancel</button>
+              <button type="submit" class="px-4 py-1.5 rounded bg-tertiary-container text-on-tertiary text-xs font-semibold hover:bg-tertiary shadow-sm">Submit for Team Review</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- 4. REVIEWS & GOVERNANCE -->
+      <div id="view-reviews" class="view-panel hidden flex-col w-full pb-16">
+        <div class="px-6 py-4 flex flex-col gap-6 max-w-[1720px] mx-auto w-full">
+          <div class="border-b border-outline-variant pb-3 flex justify-between items-center">
+            <div>
+              <h1 class="text-xl text-on-surface font-semibold">Governance &amp; Approvals Dashboard</h1>
+              <p class="text-xs text-outline font-mono mt-0.5">Review queues for Domain Team Leads and Global Data Stewards</p>
+            </div>
+            <span class="px-2.5 py-1 rounded bg-secondary-container/20 text-secondary border border-secondary/30 font-mono text-xs font-semibold">2 Pending Proposals</span>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Review Card 1 -->
+            <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col justify-between gap-4">
+              <div>
+                <div class="flex justify-between items-start">
+                  <div>
+                    <span class="font-mono text-xs text-primary font-bold">#PR-104</span>
+                    <h2 class="text-base font-semibold text-on-surface">OrderCompleted</h2>
+                    <span class="text-xs text-outline font-mono">proposal/add-notes-field • v1.2.0 ➔ v1.3.0</span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded bg-tertiary/10 text-tertiary border border-tertiary/20 font-mono text-xs font-bold">Minor Compatible</span>
+                </div>
+                <p class="text-xs text-on-surface-variant mt-3 leading-relaxed">
+                  Adding optional loyalty_tier and fulfillment notes to support the Q3 Global Loyalty Program rollout.
+                </p>
+                <div class="mt-3 text-xs text-outline font-mono">Author: Alex Rivera (Checkout Core)</div>
+              </div>
+              <div class="flex justify-between items-center pt-3 border-t border-outline-variant/60">
+                <button onclick="navigate('propose')" class="text-primary text-xs hover:underline flex items-center gap-1 font-mono">Inspect Diff &rarr;</button>
+                <div class="flex gap-2">
+                  <button onclick="copyToast('OrderCompleted proposal approved and published', 'success')" class="px-3 py-1 rounded bg-tertiary-container text-on-tertiary text-xs font-semibold hover:bg-tertiary">Approve &amp; Publish</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Review Card 2 -->
+            <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col justify-between gap-4">
+              <div>
+                <div class="flex justify-between items-start">
+                  <div>
+                    <span class="font-mono text-xs text-primary font-bold">#PR-102</span>
+                    <h2 class="text-base font-semibold text-on-surface">PaymentProcessed</h2>
+                    <span class="text-xs text-outline font-mono">proposal/remove-legacy-card-hash • v2.0.0 ➔ v3.0.0</span>
+                  </div>
+                  <span class="px-2 py-0.5 rounded bg-error-container/20 text-error border border-error/30 font-mono text-xs font-bold">Major Breaking</span>
+                </div>
+                <p class="text-xs text-on-surface-variant mt-3 leading-relaxed">
+                  PCI-DSS compliance: removing legacy card_hash. Requires Data Steward gate approval for Iceberg table migration.
+                </p>
+                <div class="mt-3 text-xs text-outline font-mono">Author: Elena Rostova (Billing Team)</div>
+              </div>
+              <div class="flex justify-between items-center pt-3 border-t border-outline-variant/60">
+                <button onclick="navigate('propose')" class="text-primary text-xs hover:underline flex items-center gap-1 font-mono">Inspect Diff &rarr;</button>
+                <div class="flex gap-2">
+                  <button onclick="copyToast('Changes requested on PaymentProcessed proposal', 'error')" class="px-3 py-1 rounded bg-error-container/20 text-error text-xs hover:bg-error-container/30">Request Changes</button>
+                  <button onclick="copyToast('PaymentProcessed proposal approved with Data Steward sign-off', 'success')" class="px-3 py-1 rounded bg-tertiary-container text-on-tertiary text-xs font-semibold hover:bg-tertiary">Approve &amp; Sign-off</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. EXPORT & DDL CENTER -->
+      <div id="view-export" class="view-panel hidden flex-col w-full pb-16">
+        <div class="px-6 py-4 flex flex-col gap-6 max-w-[1720px] mx-auto w-full">
+          <div class="border-b border-outline-variant pb-3">
+            <h1 class="text-xl text-on-surface font-semibold">Export Center &amp; SDK Automation</h1>
+            <p class="text-xs text-outline font-mono mt-0.5">Generate Data Lake table schemas and strongly-typed CloudEvent SDKs</p>
+          </div>
+
+          <!-- DDL Generator -->
+          <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col gap-3">
+            <div class="flex justify-between items-center">
+              <h2 class="text-sm font-semibold text-on-surface flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary">table_chart_view</span> Apache Iceberg &amp; Delta Lake DDL
+              </h2>
+              <button onclick="copyToast(document.getElementById('export-ddl-box').innerText, 'DDL SQL')" class="px-3 py-1 rounded bg-surface-container text-xs hover:bg-surface-container-high border border-outline-variant">Copy DDL</button>
+            </div>
+            <div class="rounded border border-outline-variant bg-[#0a0e16] p-4 font-mono text-xs text-[#dfe2ee] overflow-x-auto">
+              <pre id="export-ddl-box">CREATE TABLE IF NOT EXISTS prod_lake.orders.lake_orders_completed (\n    event_id STRING NOT NULL,\n    order_id STRING NOT NULL,\n    customer_id STRING NOT NULL,\n    customer_email STRING,\n    amount_cents BIGINT NOT NULL,\n    currency VARCHAR(3) NOT NULL,\n    completed_at TIMESTAMP NOT NULL\n)\nUSING iceberg\nPARTITIONED BY (days(completed_at), bucket(16, order_id));</pre>
+            </div>
+          </div>
+
+          <!-- kalyxctl CLI SDK Generator -->
+          <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col gap-3">
+            <div class="flex justify-between items-center">
+              <h2 class="text-sm font-semibold text-on-surface flex items-center gap-2">
+                <span class="material-symbols-outlined text-tertiary">terminal</span> kalyxctl SDK Generator
+              </h2>
+              <div class="flex gap-1 font-mono text-xs">
+                <button onclick="setExportLang('ts')" id="btn-lang-ts" class="px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary font-bold">TypeScript</button>
+                <button onclick="setExportLang('py')" id="btn-lang-py" class="px-2 py-0.5 rounded bg-surface-container text-outline hover:text-on-surface">Python</button>
+                <button onclick="setExportLang('go')" id="btn-lang-go" class="px-2 py-0.5 rounded bg-surface-container text-outline hover:text-on-surface">Go</button>
+              </div>
+            </div>
+            <div class="p-3 rounded bg-[#070a0f] border border-outline-variant font-mono text-xs text-primary flex justify-between items-center">
+              <span id="export-cli-cmd">$ kalyxctl generate --event orders.order.completed.v1 --lang typescript --out ./src/events</span>
+              <button onclick="copyToast(document.getElementById('export-cli-cmd').innerText.replace('$ ', ''), 'CLI command')" class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high border border-outline-variant text-on-surface text-[11px]">Copy</button>
+            </div>
+            <div class="rounded border border-outline-variant bg-[#0a0e16] p-4 font-mono text-xs text-[#dfe2ee] overflow-x-auto">
+              <pre id="export-sdk-code">import { CloudEvent } from 'cloudevents';\n\nexport interface OrderCompletedData {\n  order_id: string;\n  customer_id: string;\n  customer_email: string;\n  amount_cents: number;\n  currency: 'USD' | 'EUR' | 'GBP';\n  completed_at: string;\n}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. SETTINGS & ACCESS TOKENS -->
+      <div id="view-settings" class="view-panel hidden flex-col w-full pb-16">
+        <div class="px-6 py-4 flex flex-col gap-6 max-w-[1720px] mx-auto w-full">
+          <div class="border-b border-outline-variant pb-3">
+            <h1 class="text-xl text-on-surface font-semibold">Access Tokens &amp; Organization Settings</h1>
+            <p class="text-xs text-outline font-mono mt-0.5">Manage Personal Access Tokens (PAT) and inspect OIDC claim group mappings</p>
+          </div>
+
+          <!-- PAT Tokens -->
+          <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col gap-4">
+            <div class="flex justify-between items-center border-b border-outline-variant/60 pb-3">
+              <div>
+                <h2 class="text-sm font-semibold text-on-surface flex items-center gap-2">
+                  <span class="material-symbols-outlined text-primary">key</span> Personal Access Tokens (PAT)
+                </h2>
+                <p class="text-xs text-outline">Service tokens for CI/CD pipelines and kalyxctl CLI authorization.</p>
+              </div>
+              <button onclick="generateTokenPrompt()" class="h-8 px-3 rounded bg-tertiary-container hover:bg-tertiary text-on-tertiary text-xs font-semibold shadow-sm flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px]">add</span> Generate Token
+              </button>
+            </div>
+
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="h-8 bg-surface-container font-mono text-outline uppercase border-b border-outline-variant">
+                  <th class="px-3 py-1">Token Name</th>
+                  <th class="px-3 py-1">Secret Preview</th>
+                  <th class="px-3 py-1">Created</th>
+                  <th class="px-3 py-1">Last Used</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant/30 text-on-surface font-mono" id="pat-tokens-tbody">
+                <tr class="h-10 hover:bg-surface-container">
+                  <td class="px-3 py-2 font-sans font-medium">GitHub Actions CI - Checkout Service</td>
+                  <td class="px-3 py-2 text-primary">kalyx_sec_7a9f...e4b1</td>
+                  <td class="px-3 py-2 text-outline">2025-01-15</td>
+                  <td class="px-3 py-2 text-outline">Today 12:04 UTC</td>
+                </tr>
+                <tr class="h-10 hover:bg-surface-container">
+                  <td class="px-3 py-2 font-sans font-medium">ArgoCD Sync - Lakehouse CDC Ingestion</td>
+                  <td class="px-3 py-2 text-primary">kalyx_sec_10cd...8910</td>
+                  <td class="px-3 py-2 text-outline">2025-02-01</td>
+                  <td class="px-3 py-2 text-outline">Today 13:00 UTC</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- OIDC Claim Groups -->
+          <div class="p-5 rounded border border-outline-variant bg-surface-container-low flex flex-col gap-4">
+            <div class="border-b border-outline-variant/60 pb-3">
+              <h2 class="text-sm font-semibold text-on-surface flex items-center gap-2">
+                <span class="material-symbols-outlined text-secondary">badge</span> OIDC IdP Claim Groups &amp; RBAC
+              </h2>
+              <p class="text-xs text-outline">Mapped automatically from corporate identity claims (Okta / Google Workspace / Azure AD).</p>
+            </div>
+
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="h-8 bg-surface-container font-mono text-outline uppercase border-b border-outline-variant">
+                  <th class="px-3 py-1">IdP Claim Group</th>
+                  <th class="px-3 py-1">Kalyx Team</th>
+                  <th class="px-3 py-1">Role</th>
+                  <th class="px-3 py-1">Members</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant/30 text-on-surface">
+                <tr class="h-10 hover:bg-surface-container">
+                  <td class="px-3 py-2 font-mono text-primary">idp-grp-checkout-engineers</td>
+                  <td class="px-3 py-2 font-medium">Checkout Core</td>
+                  <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded bg-surface-container text-xs">Producer &amp; Consumer</span></td>
+                  <td class="px-3 py-2 text-outline font-mono">14 engineers</td>
+                </tr>
+                <tr class="h-10 hover:bg-surface-container">
+                  <td class="px-3 py-2 font-mono text-primary">idp-grp-data-stewards</td>
+                  <td class="px-3 py-2 font-medium">Data Governance Stewards</td>
+                  <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary border border-secondary/30 text-xs">Global Data Steward (Breaking Gate)</span></td>
+                  <td class="px-3 py-2 text-outline font-mono">4 engineers</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- CLIENT-SIDE APPLICATION SCRIPT -->
+  <script>
+    const CONTRACTS_DATA = [
+      { id: "orders.order.completed", name: "OrderCompleted", type: "orders.order.completed.v1", domain: "Orders", version: "v1.2.0", status: "approved", pii: 1, lake: "Iceberg & Delta", team: "Checkout Core" },
+      { id: "payments.payment.processed", name: "PaymentProcessed", type: "payments.payment.processed.v1", domain: "Payments", version: "v2.0.0", status: "approved", pii: 2, lake: "Iceberg & Delta v3", team: "Billing Team" },
+      { id: "orders.cart.abandoned", name: "CartAbandoned", type: "orders.cart.abandoned.v1", domain: "Orders", version: "v0.9.0", status: "in_review", pii: 1, lake: "Iceberg", team: "Growth & Funnel" },
+      { id: "users.user.registered", name: "UserRegistered", type: "users.user.registered.v1", domain: "Users", version: "v1.4.0", status: "approved", pii: 3, lake: "Iceberg & Delta", team: "Identity IAM" },
+      { id: "inventory.item.reserved", name: "InventoryReserved", type: "inventory.item.reserved.v1", domain: "Inventory", version: "v1.0.0", status: "approved", pii: 0, lake: "Iceberg", team: "Supply Chain" },
+      { id: "orders.shipment.dispatched", name: "ShipmentDispatched", type: "orders.shipment.dispatched.v1", domain: "Orders", version: "v1.1.0", status: "approved", pii: 1, lake: "Iceberg & Delta", team: "Logistics Core" }
+    ];
+
+    let currentDomainFilter = "ALL";
+    let piiOnlyFilter = false;
+
+    function renderCatalogTable() {
+      const tbody = document.getElementById("catalog-table-body");
+      if (!tbody) return;
+
+      const filtered = CONTRACTS_DATA.filter(c => {
+        if (currentDomainFilter !== "ALL" && c.domain !== currentDomainFilter) return false;
+        if (piiOnlyFilter && c.pii === 0) return false;
+        return true;
+      });
+
+      tbody.innerHTML = filtered.map(c => `
+        <tr onclick="navigate('workbench', '${c.id}')" class="h-10 hover:bg-surface-container/60 transition-colors cursor-pointer group">
+          <td class="px-4 py-2 font-medium">
+            <div class="flex items-center gap-2">
+              <div class="w-1.5 h-4 ${c.status === 'approved' ? 'bg-primary-container' : 'bg-secondary'} rounded-sm"></div>
+              <span class="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">${c.name}</span>
+            </div>
+          </td>
+          <td class="px-4 py-2 font-mono text-primary">
+            <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container-low border border-outline-variant/40">
+              <span>${c.type}</span>
+              <button onclick="event.stopPropagation(); copyToast('${c.type}', 'CloudEvent Type')" class="text-outline hover:text-on-surface"><span class="material-symbols-outlined text-[13px]">content_copy</span></button>
+            </div>
+          </td>
+          <td class="px-3 py-2 font-mono"><span class="px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant">${c.domain}</span></td>
+          <td class="px-4 py-2 font-mono">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded ${c.status === 'approved' ? 'bg-tertiary/10 text-tertiary border border-tertiary/20' : 'bg-secondary-container/20 text-secondary border border-secondary/30'}">
+              <span class="w-1.5 h-1.5 rounded-full ${c.status === 'approved' ? 'bg-tertiary' : 'bg-secondary animate-pulse'}"></span>
+              ${c.version} ${c.status === 'approved' ? 'Approved' : 'In Review'}
+            </span>
+          </td>
+          <td class="px-4 py-2 font-mono text-primary-fixed-dim">
+            <span class="px-1.5 py-0.5 rounded bg-surface-container-high border border-outline-variant/40 inline-flex items-center gap-1">
+              <span class="material-symbols-outlined text-[12px]">check</span> ${c.lake}
+            </span>
+          </td>
+          <td class="px-4 py-2 font-mono">
+            ${c.pii > 0 
+              ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary border border-secondary/30"><span class="material-symbols-outlined text-[12px]">shield</span> ${c.pii} PII Field${c.pii > 1 ? 's' : ''}</span>`
+              : `<span class="text-outline">None</span>`
+            }
+          </td>
+          <td class="px-4 py-2 text-right">
+            <div class="inline-flex items-center gap-1" onclick="event.stopPropagation()">
+              <button onclick="navigate('workbench', '${c.id}')" class="h-6 px-2 rounded bg-surface-container-high hover:bg-surface-bright text-on-surface font-mono text-[11px] border border-outline-variant">Inspect</button>
+              <button onclick="navigate('export')" class="p-1 rounded hover:bg-surface-container-high text-outline hover:text-on-surface"><span class="material-symbols-outlined text-[15px]">file_download</span></button>
+              <button onclick="navigate('propose')" class="p-1 rounded hover:bg-surface-container-high text-outline hover:text-on-surface"><span class="material-symbols-outlined text-[15px]">fork_right</span></button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function filterDomain(dom) {
+      currentDomainFilter = dom;
+      document.querySelectorAll(".domain-btn").forEach(btn => {
+        if (btn.innerText.includes(dom) || (dom === "ALL" && btn.innerText.includes("All Domains"))) {
+          btn.className = "domain-btn active px-3 py-1 rounded bg-surface-container-high text-primary border border-outline-variant/80 font-semibold";
+        } else {
+          btn.className = "domain-btn px-3 py-1 rounded hover:bg-surface-container text-on-surface-variant";
+        }
+      });
+      renderCatalogTable();
+    }
+
+    function togglePiiFilter() {
+      piiOnlyFilter = !piiOnlyFilter;
+      const dot = document.getElementById("piiDot");
+      const indicator = document.getElementById("piiIndicator");
+      if (piiOnlyFilter) {
+        dot.style.transform = "translateX(12px)";
+        indicator.className = "w-6 h-3 bg-secondary rounded-full p-0.5 relative transition-colors";
+      } else {
+        dot.style.transform = "translateX(0)";
+        indicator.className = "w-6 h-3 bg-surface-container-highest rounded-full p-0.5 relative transition-colors";
+      }
+      renderCatalogTable();
+    }
+
+    function navigate(view, eventId) {
+      document.querySelectorAll(".view-panel").forEach(p => p.classList.add("hidden"));
+      document.querySelectorAll("#nav-links button").forEach(btn => {
+        btn.className = "flex items-center justify-between px-2.5 py-2 rounded-r transition-colors text-on-surface-variant hover:bg-surface-container hover:text-on-surface w-full text-left";
+      });
+
+      const breadcrumb = document.getElementById("breadcrumb-title");
+
+      if (view === "workbench") {
+        document.getElementById("view-workbench").classList.remove("hidden");
+        breadcrumb.innerText = "Contract Detail & Workbench";
+      } else if (view === "propose") {
+        document.getElementById("view-propose").classList.remove("hidden");
+        breadcrumb.innerText = "Proposals / Schema Diff";
+      } else if (view === "reviews") {
+        document.getElementById("view-reviews").classList.remove("hidden");
+        document.getElementById("nav-reviews").className = "flex items-center justify-between px-2.5 py-2 rounded-r transition-colors bg-surface-container-high text-primary border-l-2 border-primary-container font-medium w-full text-left";
+        breadcrumb.innerText = "Governance & Approvals";
+      } else if (view === "export") {
+        document.getElementById("view-export").classList.remove("hidden");
+        document.getElementById("nav-export").className = "flex items-center justify-between px-2.5 py-2 rounded-r transition-colors bg-surface-container-high text-primary border-l-2 border-primary-container font-medium w-full text-left";
+        breadcrumb.innerText = "Export Center & DDL";
+      } else if (view === "settings") {
+        document.getElementById("view-settings").classList.remove("hidden");
+        document.getElementById("nav-settings").className = "flex items-center justify-between px-2.5 py-2 rounded-r transition-colors bg-surface-container-high text-primary border-l-2 border-primary-container font-medium w-full text-left";
+        breadcrumb.innerText = "Access Tokens & Settings";
+      } else {
+        document.getElementById("view-catalog").classList.remove("hidden");
+        document.getElementById("nav-catalog").className = "flex items-center justify-between px-2.5 py-2 rounded-r transition-colors bg-surface-container-high text-primary border-l-2 border-primary-container font-medium w-full text-left";
+        breadcrumb.innerText = "Contracts Catalog";
+        renderCatalogTable();
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function switchWbTab(tab) {
+      document.querySelectorAll(".wb-panel").forEach(p => p.classList.add("hidden"));
+      document.querySelectorAll(".wb-tab").forEach(t => {
+        t.className = "wb-tab px-3 py-2.5 border-b-2 border-transparent text-on-surface-variant hover:text-on-surface flex items-center gap-1.5";
+      });
+      document.getElementById("wb-panel-" + tab).classList.remove("hidden");
+      document.getElementById("wb-tab-" + tab).className = "wb-tab active px-3 py-2.5 border-b-2 border-primary text-primary flex items-center gap-1.5";
+    }
+
+    function handleVersionChange(val) {
+      const banner = document.getElementById("wb-deprecation-banner");
+      const badge = document.getElementById("wb-version-badge");
+      badge.innerText = "v" + val;
+      if (val === "1.0.0") {
+        banner.classList.remove("hidden");
+      } else {
+        banner.classList.add("hidden");
+      }
+    }
+
+    function setBridgeFormat(fmt) {
+      const btnIceberg = document.getElementById("ddl-fmt-iceberg");
+      const btnDelta = document.getElementById("ddl-fmt-delta");
+      const code = document.getElementById("bridge-ddl-code");
+      if (fmt === "iceberg") {
+        btnIceberg.className = "px-3 py-1 rounded bg-primary-container text-on-primary font-mono text-xs font-semibold";
+        btnDelta.className = "px-3 py-1 rounded bg-surface-container text-on-surface-variant font-mono text-xs hover:text-on-surface";
+        code.innerText = "CREATE TABLE IF NOT EXISTS prod_lake.orders.lake_orders_completed (\\n    event_id STRING NOT NULL,\\n    order_id STRING NOT NULL,\\n    customer_id STRING NOT NULL,\\n    customer_email STRING,\\n    amount_cents BIGINT NOT NULL,\\n    currency VARCHAR(3) NOT NULL,\\n    completed_at TIMESTAMP NOT NULL\\n)\\nUSING iceberg\\nPARTITIONED BY (days(completed_at), bucket(16, order_id));";
+      } else {
+        btnDelta.className = "px-3 py-1 rounded bg-primary-container text-on-primary font-mono text-xs font-semibold";
+        btnIceberg.className = "px-3 py-1 rounded bg-surface-container text-on-surface-variant font-mono text-xs hover:text-on-surface";
+        code.innerText = "CREATE TABLE IF NOT EXISTS delta_lake.orders.delta_orders_completed (\\n    event_id STRING NOT NULL,\\n    order_id STRING NOT NULL,\\n    customer_id STRING NOT NULL,\\n    customer_email STRING,\\n    amount_cents LONG NOT NULL,\\n    currency STRING NOT NULL,\\n    completed_at TIMESTAMP NOT NULL\\n)\\nUSING DELTA\\nPARTITIONED BY (DATE(completed_at));";
+      }
+    }
+
+    function simulateScenario(isBreaking) {
+      const card = document.getElementById("semver-diagnostic-card");
+      const badge = document.getElementById("diag-badge");
+      const rule = document.getElementById("diag-rule");
+      const ver = document.getElementById("diag-target-ver");
+      const desc = document.getElementById("diag-desc");
+      const lake = document.getElementById("diag-lake");
+      const gate = document.getElementById("diag-gate");
+      const safeBtn = document.getElementById("sim-safe-btn");
+      const breakBtn = document.getElementById("sim-breaking-btn");
+      const statText = document.getElementById("diff-stat-text");
+
+      if (isBreaking) {
+        card.className = "p-4 rounded border border-error/40 bg-gradient-to-r from-surface-container-low via-surface-container-low to-error-container/10 shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4";
+        badge.className = "px-2 py-0.5 rounded bg-error-container/30 border border-error/50 text-error font-bold";
+        badge.innerText = "MAJOR BREAKING CHANGE DETECTED";
+        rule.innerText = "RULE: REMOVED_FIELD";
+        ver.innerText = "v2.0.0";
+        desc.innerText = "Removed properties customer_id and customer_email from payload contract. Existing consumers will fail deserialization.";
+        lake.innerText = "Data Lake Bridge Impact: Breaking schema change requiring Iceberg table migration and Data Steward sign-off.";
+        gate.innerText = "Requires Data Steward Gate";
+        gate.className = "text-xs font-bold text-error font-mono";
+        safeBtn.className = "px-2 py-0.5 rounded text-outline hover:text-on-surface font-semibold";
+        breakBtn.className = "px-2 py-0.5 rounded bg-error-container text-error font-semibold";
+        statText.className = "text-error font-semibold";
+        statText.innerText = "0 lines added • 12 deletions • 2 fields removed";
+        copyToast("Simulating breaking deletion requiring major bump (v2.0.0)", "error");
+      } else {
+        card.className = "p-4 rounded border border-tertiary/40 bg-gradient-to-r from-surface-container-low via-surface-container-low to-tertiary-container/5 shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-4";
+        badge.className = "px-2 py-0.5 rounded bg-tertiary-container/20 border border-tertiary/40 text-tertiary font-bold";
+        badge.innerText = "MINOR COMPATIBLE CHANGE DETECTED";
+        rule.innerText = "RULE: ADD_OPTIONAL_FIELD";
+        ver.innerText = "v1.3.0";
+        desc.innerText = "Added optional properties loyalty_tier and notes without altering existing required constraints.";
+        lake.innerText = "Data Lake Bridge Impact: Fully backward compatible with Apache Iceberg Schema Evolution.";
+        gate.innerText = "Ready for Review";
+        gate.className = "text-xs font-bold text-tertiary font-mono";
+        breakBtn.className = "px-2 py-0.5 rounded text-outline hover:text-on-surface font-semibold";
+        safeBtn.className = "px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary font-semibold";
+        statText.className = "text-tertiary font-semibold";
+        statText.innerText = "+10 lines added • 0 deletions • 2 fields introduced";
+        copyToast("Simulating safe backward-compatible addition (v1.3.0)", "info");
+      }
+    }
+
+    function handleProposalSubmit(e) {
+      e.preventDefault();
+      copyToast("Proposal submitted for Governance Review!", "success");
+      navigate('reviews');
+    }
+
+    function revertDraft() {
+      document.getElementById("diff-right-draft").value = document.getElementById("diff-left-base").innerText;
+      simulateScenario(false);
+      copyToast("Reverted draft to v1.2.0 active schema", "info");
+    }
+
+    function setExportLang(lang) {
+      const btnTs = document.getElementById("btn-lang-ts");
+      const btnPy = document.getElementById("btn-lang-py");
+      const btnGo = document.getElementById("btn-lang-go");
+      const cmd = document.getElementById("export-cli-cmd");
+      const code = document.getElementById("export-sdk-code");
+
+      [btnTs, btnPy, btnGo].forEach(b => b.className = "px-2 py-0.5 rounded bg-surface-container text-outline hover:text-on-surface");
+
+      if (lang === "ts") {
+        btnTs.className = "px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary font-bold";
+        cmd.innerText = "$ kalyxctl generate --event orders.order.completed.v1 --lang typescript --out ./src/events";
+        code.innerText = "import { CloudEvent } from 'cloudevents';\\n\\nexport interface OrderCompletedData {\\n  order_id: string;\\n  customer_id: string;\\n  customer_email: string;\\n  amount_cents: number;\\n  currency: 'USD' | 'EUR' | 'GBP';\\n  completed_at: string;\\n}";
+      } else if (lang === "py") {
+        btnPy.className = "px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary font-bold";
+        cmd.innerText = "$ kalyxctl generate --event orders.order.completed.v1 --lang python --out ./src/events";
+        code.innerText = "from dataclasses import dataclass\\nfrom cloudevents.http import CloudEvent\\n\\n@dataclass\\nclass OrderCompletedData:\\n    order_id: str\\n    customer_id: str\\n    customer_email: str\\n    amount_cents: int\\n    currency: str\\n    completed_at: str";
+      } else {
+        btnGo.className = "px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary font-bold";
+        cmd.innerText = "$ kalyxctl generate --event orders.order.completed.v1 --lang go --out ./pkg/events";
+        code.innerText = "package events\\n\\ntype OrderCompletedData struct {\\n    OrderID string `json:\\\"order_id\\\"`\\n    CustomerID string `json:\\\"customer_id\\\"`\\n    CustomerEmail string `json:\\\"customer_email\\\"`\\n    AmountCents int64 `json:\\\"amount_cents\\\"`\\n    Currency string `json:\\\"currency\\\"`\\n    CompletedAt string `json:\\\"completed_at\\\"`\\n}";
+      }
+    }
+
+    function generateTokenPrompt() {
+      const name = prompt("Enter service token name (e.g., GitLab CI Worker):", "GitLab CI Deployment");
+      if (!name) return;
+      const secret = "kalyx_sec_" + Array.from({length:32}, () => Math.floor(Math.random()*16).toString(16)).join('');
+      prompt("New Personal Access Token generated! Copy now, it won't be shown again:", secret);
+      copyToast("Generated Personal Access Token", "success");
+    }
+
+    function copyToast(text, label) {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text);
+      }
+      const container = document.getElementById("toast-container");
+      const toast = document.createElement("div");
+      toast.className = "pointer-events-auto flex items-center gap-2 px-3 py-2 rounded shadow-xl bg-surface-container border border-tertiary/40 text-on-surface text-xs font-mono";
+      toast.innerHTML = `<span class="material-symbols-outlined text-tertiary text-[16px]">check_circle</span><span>Copied ${label} to clipboard</span>`;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    function handleGlobalSearch(e) {
+      const q = e.target.value.toLowerCase();
+      if (!q) {
+        renderCatalogTable();
+        return;
+      }
+      const tbody = document.getElementById("catalog-table-body");
+      const filtered = CONTRACTS_DATA.filter(c => 
+        c.name.toLowerCase().includes(q) || 
+        c.type.toLowerCase().includes(q) || 
+        c.domain.toLowerCase().includes(q)
+      );
+      tbody.innerHTML = filtered.map(c => `
+        <tr onclick="navigate('workbench', '${c.id}')" class="h-10 hover:bg-surface-container/60 transition-colors cursor-pointer group">
+          <td class="px-4 py-2 font-medium">
+            <span class="text-sm font-semibold text-on-surface group-hover:text-primary transition-colors">${c.name}</span>
+          </td>
+          <td class="px-4 py-2 font-mono text-primary">${c.type}</td>
+          <td class="px-3 py-2 font-mono">${c.domain}</td>
+          <td class="px-4 py-2 font-mono text-tertiary">${c.version}</td>
+          <td class="px-4 py-2 font-mono">${c.lake}</td>
+          <td class="px-4 py-2 font-mono">${c.pii > 0 ? c.pii + ' PII' : 'None'}</td>
+          <td class="px-4 py-2 text-right font-mono"><button class="px-2 py-0.5 rounded bg-surface-container-high text-xs">Inspect</button></td>
+        </tr>
+      `).join('');
+    }
+
+    // Initialize on load
+    document.addEventListener("DOMContentLoaded", () => {
+      renderCatalogTable();
+      // Handle initial URL path if routing to subview
+      const p = window.location.pathname;
+      if (p.includes('/propose')) {
+        navigate('propose');
+      } else if (p.startsWith('/events/') && p !== '/events') {
+        navigate('workbench');
+      } else if (p === '/reviews') {
+        navigate('reviews');
+      } else if (p === '/export') {
+        navigate('export');
+      } else if (p === '/settings') {
+        navigate('settings');
+      } else {
+        navigate('catalog');
+      }
+    });
+  </script>
+</body>
+</html>

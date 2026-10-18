@@ -548,3 +548,44 @@ func TestServer_RBAC_CanPropose(t *testing.T) {
 	}
 }
 
+func TestServer_WebDashboard_EmbeddedUI(t *testing.T) {
+	server, _ := setupTestServer(t)
+
+	// Test 1: Root path / serves embedded HTML
+	reqRoot := httptest.NewRequest(http.MethodGet, "/", nil)
+	recRoot := httptest.NewRecorder()
+	server.ServeHTTP(recRoot, reqRoot)
+
+	if recRoot.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /, got %d: %s", recRoot.Code, recRoot.Body.String())
+	}
+	if !strings.Contains(recRoot.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("expected text/html Content-Type, got %s", recRoot.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(recRoot.Body.String(), "Kalyx") {
+		t.Errorf("expected body to contain 'Kalyx', got: %s", recRoot.Body.String()[:100])
+	}
+
+	// Test 2: SPA client route /events serves index.html fallback
+	reqEvents := httptest.NewRequest(http.MethodGet, "/events", nil)
+	recEvents := httptest.NewRecorder()
+	server.ServeHTTP(recEvents, reqEvents)
+
+	if recEvents.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for SPA route /events, got %d", recEvents.Code)
+	}
+	if !strings.Contains(recEvents.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("expected text/html for /events SPA fallback, got %s", recEvents.Header().Get("Content-Type"))
+	}
+
+	// Test 3: SPA client route /events/orders.order.completed/propose serves index.html
+	reqPropose := httptest.NewRequest(http.MethodGet, "/events/orders.order.completed/propose", nil)
+	recPropose := httptest.NewRecorder()
+	server.ServeHTTP(recPropose, reqPropose)
+
+	if recPropose.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for SPA route /events/.../propose, got %d", recPropose.Code)
+	}
+}
+
+

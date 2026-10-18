@@ -1,6 +1,6 @@
 # Binaries and executables
 bin/
-dist/
+/dist/
 *.exe
 *.exe~
 *.dll
@@ -22,8 +22,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Embedded web assets directory generated during build
-internal/webserver/dist/
+# Embedded web assets directory generated during build (index.html tracked as fallback)
+internal/webserver/dist/*
+!internal/webserver/dist/index.html
 
 # SQLite databases & temp storage
 *.db
