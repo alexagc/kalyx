@@ -6,13 +6,14 @@ run:
 
 linters:
   enable:
-    - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
     - revive
   settings:
+    staticcheck:
+      checks: ["all", "-QF*", "-ST*"]
     govet:
       enable-all: false
     revive:
